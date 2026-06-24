@@ -9,3 +9,9 @@ __pycache__/
 # OS
 Thumbs.db
 .DS_Store
+# Cloud build: Puppeteer test scaffolding + the local handoff (has temp passwords) — never push these
+node_modules/
+package.json
+package-lock.json
+verify_cloud.mjs
+CLOUD_DEPLOY_AND_HANDOFF.md

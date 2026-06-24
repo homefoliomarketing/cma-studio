@@ -5,3 +5,7 @@ __pycache__/
 *.pyc
 supabase/
 *.pdf
+node_modules/
+package*.json
+*.mjs
+*.md
