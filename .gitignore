@@ -1,0 +1,11 @@
+# Local app runtime data — not used by the cloud app (Supabase holds it)
+data/uploads/
+data/cmas/
+# Scratch / reference artifacts
+_ref/
+# Python
+__pycache__/
+*.pyc
+# OS
+Thumbs.db
+.DS_Store
