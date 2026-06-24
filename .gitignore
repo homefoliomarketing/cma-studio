@@ -15,3 +15,6 @@ package.json
 package-lock.json
 verify_cloud.mjs
 CLOUD_DEPLOY_AND_HANDOFF.md
+
+# Realtor's local branding (headshot/contact) — cloud uses Supabase, keep out of repo
+data/settings.json
