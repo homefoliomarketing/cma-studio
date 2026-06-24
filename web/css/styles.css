@@ -603,9 +603,10 @@ table.grid thead th { border-bottom: 2px solid #cabfa0; }
 /* ============================================================
    Login gate (invite-only) — matches the Ink & Brass system
    ============================================================ */
+/* Fixed + inset:0 lifts it out of the app's CSS grid so it centers on the
+   whole viewport (otherwise it's trapped in the 268px sidebar column). */
 .login-screen {
-  position: relative; z-index: 1;
-  min-height: 100vh;
+  position: fixed; inset: 0; z-index: 50;
   display: flex; align-items: center; justify-content: center;
   padding: 32px;
 }
