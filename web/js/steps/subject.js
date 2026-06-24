@@ -27,7 +27,7 @@ export function renderSubject(root, ctx) {
       zone.classList.add('drag');
       flash('Reading the MLS PDF…');
       try {
-        const result = await uploadPdf(file);
+        const result = await uploadPdf(file, ctx.cma.id);
         applyUpload(s, result);
         recomputeBeds(); recomputeBaths();
         ctx.save();

@@ -1,5 +1,7 @@
 // Main controller: app shell, step navigation, autosave.
 import { el, $, flash, debounce } from './ui.js';
+import { supabase } from './supa.js';
+import { renderLogin, signOut } from './auth.js';
 import * as store from './state.js';
 import { renderSubject } from './steps/subject.js';
 import { renderComps } from './steps/comps.js';
@@ -23,6 +25,13 @@ export const App = {
 
   async init() {
     this.guardStrayDrops();
+    // Invite-only gate: no session -> show the login screen, then re-init.
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      renderLogin($('#app'), () => this.init());
+      return;
+    }
+    store.setAuthUid(session.user.id);
     this.settings = await store.loadSettings();
     this.cma = store.loadDraft() || store.newCMA();
     if (!this.cma.step) this.cma.step = 'subject';
@@ -124,6 +133,11 @@ export const App = {
       el('div', { class: 'step', onclick: () => this.newCma() },
         el('span', { class: 'num' }, el('span', {}, '+')),
         el('span', { class: 'lbl' }, 'New CMA', el('small', {}, 'Start fresh')),
+      ),
+      el('div', { class: 'step sign-out', onclick: () => signOut() },
+        el('span', { class: 'num' }, el('span', {}, '⎋')),
+        el('span', { class: 'lbl' }, 'Sign out',
+          el('small', {}, b.agentName || b.email || 'Signed in')),
       ),
     );
 

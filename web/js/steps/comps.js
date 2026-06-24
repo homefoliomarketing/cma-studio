@@ -65,7 +65,7 @@ function makeDropzone(ctx, opts) {
       if (opts.list.length >= opts.max) { flash(`Up to ${opts.max}.`); break; }
       flash('Reading ' + file.name + '…');
       try {
-        const result = await uploadPdf(file);
+        const result = await uploadPdf(file, ctx.cma.id);
         const rec = applyUpload(opts.make(), result);
         rec.source = opts.source;
         rec.bedsTotal = (Number(rec.bedsAg) || 0) + (Number(rec.bedsBg) || 0);

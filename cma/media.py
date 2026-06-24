@@ -11,6 +11,7 @@ always add/replace photos by hand.
 """
 
 import io
+import base64
 import fitz  # PyMuPDF
 
 # Ignore small images (logos, board badges, map pins, icons).
@@ -68,3 +69,42 @@ def render_pages(doc, out_dir, prefix="page", zoom=2.0):
             f.write(data)
         names.append(fn)
     return names
+
+
+def extract_photos_b64(doc):
+    """Like extract_photos, but return base64 JPEG data URIs instead of files."""
+    uris = []
+    seen = set()
+    for page in doc:
+        for info in page.get_images(full=True):
+            xref = info[0]
+            if xref in seen:
+                continue
+            seen.add(xref)
+            try:
+                pix = fitz.Pixmap(doc, xref)
+                if pix.width < _MIN_W or pix.height < _MIN_H:
+                    continue
+                data = _pix_to_jpeg(pix)
+            except Exception:
+                continue
+            b64 = base64.b64encode(data).decode()
+            uris.append(f"data:image/jpeg;base64,{b64}")
+            if len(uris) >= _MAX_PHOTOS:
+                return uris
+    return uris
+
+
+def render_pages_b64(doc, zoom=2.0):
+    """Like render_pages, but return base64 JPEG data URIs (page order)."""
+    uris = []
+    mat = fitz.Matrix(zoom, zoom)
+    for page in doc:
+        try:
+            pix = page.get_pixmap(matrix=mat)
+            data = _pix_to_jpeg(pix, quality=80)
+        except Exception:
+            continue
+        b64 = base64.b64encode(data).decode()
+        uris.append(f"data:image/jpeg;base64,{b64}")
+    return uris

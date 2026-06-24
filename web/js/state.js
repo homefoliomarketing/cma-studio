@@ -1,4 +1,5 @@
 // The CMA data model, editable defaults, and saving/loading.
+import { supabase, MEDIA_BUCKET } from './supa.js';
 
 export const CONDITION_LEVELS = ['Dated', 'Updated', 'Good', 'Excellent', 'New'];
 
@@ -103,7 +104,8 @@ export function blankActive() {
 
 export function newCMA() {
   return {
-    id: uid('cma'),
+    // A real UUID so it doubles as the Storage folder name and the `cmas` PK.
+    id: (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : uid('cma'),
     title: '',
     savedAt: null,
     asOf: new Date().toLocaleDateString('en-CA', { year: 'numeric', month: 'long', day: 'numeric' }),
@@ -169,6 +171,9 @@ export function fromParsed(p) {
 }
 
 // ---- Persistence ----------------------------------------------------------
+// Auth + data + photo storage are Supabase; the in-progress draft stays in
+// localStorage (per device) so a refresh never loses work. An explicit Save
+// writes to the `cmas` table, and RLS scopes every read/write to the agent.
 const DRAFT_KEY = 'cma:draft';
 
 export function saveDraft(cma) {
@@ -178,13 +183,65 @@ export function loadDraft() {
   try { return JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null'); } catch { return null; }
 }
 
-// Upload a PDF: stores the full file, reads page 1, extracts photos, renders
-// every page. Returns { data, photos, pages, uploadId, pageCount }.
-export async function uploadPdf(file) {
-  const res = await fetch('/api/upload', { method: 'POST', body: file });
+// The signed-in agent's id, cached after login (app.js calls setAuthUid).
+let _uid = null;
+let _isAdmin = false;
+export function setAuthUid(id) { _uid = id; }
+export function isAdmin() { return _isAdmin; }
+async function currentUid() {
+  if (_uid) return _uid;
+  const { data } = await supabase.auth.getUser();
+  _uid = data?.user?.id || null;
+  return _uid;
+}
+
+const isUuid = (s) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s || '');
+const rnd = () => Math.random().toString(36).slice(2, 10);
+
+// Decode a "data:image/...;base64,xxxx" URI into a Blob ready for upload.
+function dataUriToBlob(uri) {
+  const comma = uri.indexOf(',');
+  const mime = uri.slice(5, comma).split(';')[0] || 'image/jpeg';
+  const bin = atob(uri.slice(comma + 1));
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new Blob([bytes], { type: mime });
+}
+
+// Upload base64 image URIs to Storage; return their public URLs. Bounded
+// concurrency keeps a photo-heavy MLS sheet from opening dozens of sockets.
+async function uploadImages(uris, prefix) {
+  const out = new Array(uris.length);
+  let idx = 0;
+  async function worker() {
+    while (idx < uris.length) {
+      const i = idx++;
+      const path = `${prefix}_${i}.jpg`;
+      const { error } = await supabase.storage.from(MEDIA_BUCKET)
+        .upload(path, dataUriToBlob(uris[i]), { contentType: 'image/jpeg', upsert: true });
+      if (error) throw new Error(error.message);
+      out[i] = supabase.storage.from(MEDIA_BUCKET).getPublicUrl(path).data.publicUrl;
+    }
+  }
+  if (uris.length) await Promise.all(Array.from({ length: Math.min(6, uris.length) }, worker));
+  return out;
+}
+
+// Read a PDF: the stateless parser service returns parsed data + base64 photos
+// and page-renders; we upload those images to this agent's Storage folder and
+// return their public URLs. Path: media/{uid}/{cmaId}/{uploadId}/photo_N.jpg
+export async function uploadPdf(file, cmaId) {
+  const res = await fetch('/api/parse', { method: 'POST', body: file });
   const json = await res.json();
   if (!json.ok) throw new Error(json.error || 'Could not read this PDF.');
-  return json;
+  const uid = await currentUid();
+  const up = rnd();
+  const base = `${uid}/${cmaId}/${up}`;
+  const [photos, pages] = await Promise.all([
+    uploadImages(json.photos || [], `${base}/photo`),
+    uploadImages(json.pages  || [], `${base}/page`),
+  ]);
+  return { data: json.data, photos, pages, pageCount: json.pageCount || 0, uploadId: up };
 }
 
 // Merge an upload result onto a property record (subject or comp).
@@ -198,53 +255,99 @@ export function applyUpload(prop, result) {
   return prop;
 }
 
+// ---- Saved CMAs (Supabase `cmas`, RLS-scoped to the agent) ----------------
 export async function saveCmaToServer(cma) {
   cma.savedAt = new Date().toISOString();
-  cma.id = cma.id || ('cma_' + Date.now());
-  const res = await fetch('/api/cma', { method: 'POST', body: JSON.stringify(cma) });
-  return res.json();
+  if (!isUuid(cma.id)) cma.id = (crypto.randomUUID ? crypto.randomUUID() : 'cma_' + Date.now());
+  const user_id = await currentUid();
+  const { error } = await supabase.from('cmas').upsert({
+    id: cma.id,
+    user_id,
+    title: cma.title || cma.subject?.address || 'Untitled CMA',
+    data: cma,
+  });
+  if (error) throw new Error(error.message);
+  return { ok: true, id: cma.id };
 }
 export async function listCmas() {
-  const res = await fetch('/api/cma');
-  return (await res.json()).items || [];
+  const { data, error } = await supabase.from('cmas')
+    .select('id,title,updated_at').order('updated_at', { ascending: false });
+  if (error) throw new Error(error.message);
+  return (data || []).map(r => ({ id: r.id, title: r.title, savedAt: r.updated_at }));
 }
 export async function openCma(id) {
-  const res = await fetch('/api/cma/' + encodeURIComponent(id));
-  const json = await res.json();
-  if (!json.ok) throw new Error('Could not open that CMA.');
-  return json.data;
+  const { data, error } = await supabase.from('cmas').select('data').eq('id', id).single();
+  if (error || !data) throw new Error('Could not open that CMA.');
+  return data.data;
 }
 export async function deleteCma(id) {
-  await fetch('/api/cma/' + encodeURIComponent(id), { method: 'DELETE' });
+  const { error } = await supabase.from('cmas').delete().eq('id', id);
+  if (error) throw new Error(error.message);
 }
 
+// ---- Settings: shared company brand + presets (org_settings) merged with the
+// agent's own identity (their profiles row), returned as ONE branding object so
+// the rest of the app and the report read it exactly as before.
 export async function loadSettings() {
-  let s = null;
-  try { s = JSON.parse(localStorage.getItem('cma:settings') || 'null'); } catch {}
-  if (!s) {
-    try {
-      const res = await fetch('/api/settings');
-      s = (await res.json()).data;
-    } catch {}
-  }
-  return mergeSettings(defaultSettings(), s);
-}
-export async function persistSettings(settings) {
-  try { localStorage.setItem('cma:settings', JSON.stringify(settings)); } catch {}
-  try { await fetch('/api/settings', { method: 'POST', body: JSON.stringify(settings) }); } catch {}
-}
+  const base = defaultSettings();
+  let org = null, profile = null;
+  try {
+    const uid = await currentUid();
+    const [orgRes, profRes] = await Promise.all([
+      supabase.from('org_settings').select('presets,company_branding').eq('id', 1).single(),
+      supabase.from('profiles').select('full_name,title,phone,email,headshot_url,is_admin').eq('id', uid).single(),
+    ]);
+    org = orgRes.data; profile = profRes.data;
+  } catch {}
 
-function mergeSettings(base, override) {
-  if (!override) return base;
-  // The preset structure is versioned. If a saved copy predates the current
-  // structure, reset presets to the new defaults (keeping the realtor's branding).
-  const op = override.presets || {};
-  const presets = (override.version === base.version)
+  const op = (org && org.presets) || {};
+  const presets = Object.keys(op).length
     ? { ...base.presets, ...op, heating: { ...base.presets.heating, ...(op.heating || {}) } }
     : base.presets;
-  return {
-    version: base.version,
-    presets,
-    branding: { ...base.branding, ...(override.branding || {}) },
+
+  const cb = (org && org.company_branding) || {};
+  _isAdmin = !!(profile && profile.is_admin);
+  const branding = {
+    ...base.branding,
+    // shared company brand (org_settings)
+    companyName: cb.companyName || base.branding.companyName,
+    tagline:     cb.tagline     || base.branding.tagline,
+    primary:     cb.primary     || base.branding.primary,
+    accent:      cb.accent      || base.branding.accent,
+    logo:        cb.logo        || null,
+    // per-agent identity (profiles)
+    agentName:  (profile && profile.full_name) || '',
+    agentTitle: (profile && profile.title)     || base.branding.agentTitle,
+    phone:      (profile && profile.phone)     || '',
+    email:      (profile && profile.email)     || '',
+    headshot:   (profile && profile.headshot_url) || null,
   };
+  return { version: base.version, presets, branding, isAdmin: _isAdmin };
+}
+
+export async function persistSettings(settings) {
+  const b = settings.branding || {};
+  const uid = await currentUid();
+  // Agent identity -> own profile row (every agent may edit their own).
+  try {
+    await supabase.from('profiles').update({
+      full_name:    b.agentName  || null,
+      title:        b.agentTitle || null,
+      phone:        b.phone      || null,
+      email:        b.email      || null,
+      headshot_url: b.headshot   || null,
+    }).eq('id', uid);
+  } catch {}
+  // Company brand + presets -> shared org_settings (admins only; RLS enforces).
+  if (settings.isAdmin || _isAdmin) {
+    try {
+      await supabase.from('org_settings').update({
+        presets: settings.presets,
+        company_branding: {
+          companyName: b.companyName, tagline: b.tagline,
+          primary: b.primary, accent: b.accent, logo: b.logo || null,
+        },
+      }).eq('id', 1);
+    } catch {}
+  }
 }
