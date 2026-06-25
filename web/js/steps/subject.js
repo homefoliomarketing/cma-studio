@@ -1,7 +1,7 @@
 // Step 1 — the realtor's subject property.
 import { el, flash } from '../ui.js';
-import { CONDITION_LEVELS, HEATING_OPTIONS, STYLE_OPTIONS, BASEMENT_OPTIONS, BASEMENT_FINISH_OPTIONS, uploadPdf, applyUpload } from '../state.js';
-import { textField, stepper, chipsField, boolField, photoField, dropzone, optionField, garageField } from '../forms.js';
+import { CONDITION_LEVELS, HEATING_OPTIONS, AC_OPTIONS, STYLE_OPTIONS, BASEMENT_OPTIONS, BASEMENT_FINISH_OPTIONS, uploadPdf, applyUpload } from '../state.js';
+import { textField, stepper, chipsField, photoField, dropzone, optionField, garageField } from '../forms.js';
 
 export function renderSubject(root, ctx) {
   const s = ctx.cma.subject;
@@ -72,10 +72,10 @@ export function renderSubject(root, ctx) {
     card('Features',
       grid(
         garageField('Garage', s, { onChange: save }),
-        boolField('Central air', s, 'centralAir', { onChange: save }),
         basementField,
         finishField,
         optionField('Heating', s, 'heating', HEATING_OPTIONS, { wide: true, onChange: save }),
+        optionField('Air Conditioning', s, 'ac', AC_OPTIONS, { onChange: save }),
         textField('Age', s, 'age', { hint: 'optional', onChange: save }),
       ),
     ),

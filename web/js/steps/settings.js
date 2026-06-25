@@ -102,7 +102,7 @@ export function renderSettings(root, ctx) {
       ['noGarage',          'Garage — having one (vs none)'],
       ['garageSpace',       'Garage — each extra space'],
       ['finishedBasement',  'Finished vs. unfinished basement'],
-      ['centralAir',        'Central air — has vs. not'],
+      ['centralAir',        'Air conditioning — has vs. not'],
       ['conditionPerLevel', 'Per condition level'],
     ];
     const presetsCard = card('Adjustment presets · shared',

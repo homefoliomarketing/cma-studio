@@ -36,8 +36,18 @@ create table if not exists public.cmas (
   updated_at timestamptz not null default now()
 );
 alter table public.cmas enable row level security;
-create policy "cmas_rw_own" on public.cmas for all
-  using (auth.uid() = user_id) with check (auth.uid() = user_id);
+-- Explicit per-command policies, each scoped to the signed-in agent. (Kept as
+-- separate SELECT/INSERT/UPDATE/DELETE policies rather than one FOR ALL policy
+-- so a missing command can't silently block writes — see fix_cmas_rls.sql.)
+create policy "cmas_select_own" on public.cmas
+  for select to authenticated using (auth.uid() = user_id);
+create policy "cmas_insert_own" on public.cmas
+  for insert to authenticated with check (auth.uid() = user_id);
+create policy "cmas_update_own" on public.cmas
+  for update to authenticated using (auth.uid() = user_id) with check (auth.uid() = user_id);
+create policy "cmas_delete_own" on public.cmas
+  for delete to authenticated using (auth.uid() = user_id);
+grant select, insert, update, delete on public.cmas to authenticated;
 create index if not exists cmas_user_id_idx on public.cmas(user_id);
 
 -- ============================================================

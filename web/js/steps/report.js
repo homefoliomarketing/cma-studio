@@ -33,7 +33,7 @@ export function renderReport(root, ctx) {
     ),
     el('div', { class: 'row', style: 'gap:8px' },
       el('button', { class: 'btn btn-ghost btn-sm', onclick: () => ctx.go('settings') }, '⚙ Branding & logo'),
-      el('button', { class: 'btn btn-accent', onclick: () => window.print() }, '🖨  Print / Save as PDF'),
+      el('button', { class: 'btn btn-accent', onclick: async () => { try { await ctx.saveToServer?.(); } catch (e) {} window.print(); } }, '🖨  Print / Save as PDF'),
     ),
   );
 
@@ -47,7 +47,9 @@ export function renderReport(root, ctx) {
     const doc = el('div', { class: 'report', style: `--brand:${b.primary};--accent:${b.accent}` });
     doc.append(coverPage(), analysisPage(), gridPage());
     if (cma.actives.length) doc.append(activePage());
+    // Full MLS page-renders & photos: comps first, then any actives that have media.
     appendixPages().forEach(p => doc.append(p));
+    activeAppendixPages().forEach(p => doc.append(p));
     return doc;
   }
 
@@ -97,17 +99,22 @@ export function renderReport(root, ctx) {
     return page('cover',
       el('div', { class: 'rp-band' }, brandMark(), el('div', { class: 'rp-tagline' }, b.tagline || 'COMPARATIVE MARKET ANALYSIS')),
       cma.subject.photo
-        ? el('div', { class: 'rp-hero', style: `background-image:url(${cma.subject.photo})` })
+        ? el('div', { class: 'rp-hero', style: `background-image:url(${cma.subject.photo})` },
+            el('div', { class: 'rp-hero-scrim' }))
         : el('div', { class: 'rp-hero rp-hero-empty' }, el('span', {}, 'Subject Property')),
       el('div', { class: 'rp-cover-body' },
-        el('div', {},
-          el('div', { class: 'rp-eyebrow' }, b.tagline || 'Comparative Market Analysis'),
+        el('div', { class: 'rp-cover-lead' },
+          el('div', { class: 'rp-eyebrow rp-eyebrow-lg' },
+            el('span', { class: 'rp-eyebrow-rule' }),
+            b.tagline || 'Comparative Market Analysis'),
           el('div', { class: 'rp-address' }, cma.subject.address || 'Subject Property'),
-          el('div', { class: 'rp-city' }, [cma.subject.city, cma.subject.style].filter(Boolean).join(' · ')),
+          el('div', { class: 'rp-city' }, [cma.subject.city, cma.subject.style].filter(Boolean).join('   ·   ')),
+          el('div', { class: 'rp-cover-intro' },
+            'A considered estimate of market value, built from recent comparable sales and current competition — prepared with care for your next move.'),
         ),
         el('div', { class: 'rp-prepared' },
           cma.clientName ? el('span', {}, 'Prepared exclusively for ', el('strong', {}, cma.clientName)) : null,
-          (cma.clientName && cma.asOf) ? el('span', { class: 'rp-muted' }, '  ·  ') : null,
+          (cma.clientName && cma.asOf) ? el('span', { class: 'rp-muted' }, '   ·   ') : null,
           cma.asOf ? el('span', { class: cma.clientName ? 'rp-muted' : '' }, cma.asOf) : null,
         ),
       ),
@@ -132,38 +139,49 @@ export function renderReport(root, ctx) {
   function analysisPage() {
     const subj = cma.subject;
     const subjectCard = el('div', { class: 'rp-subject' },
-      subj.photo ? el('div', { class: 'rp-subject-photo', style: `background-image:url(${subj.photo})` }) : null,
+      subj.photo
+        ? el('div', { class: 'rp-subject-photo', style: `background-image:url(${subj.photo})` })
+        : el('div', { class: 'rp-subject-photo rp-photo-empty' }, el('span', {}, 'Subject')),
       el('div', { class: 'rp-subject-info' },
         el('div', { class: 'rp-eyebrow' }, 'Subject property'),
         el('div', { class: 'rp-subject-addr' }, subj.address || '—'),
+        el('div', { class: 'rp-subject-sub' }, [subj.city, subj.style].filter(Boolean).join('   ·   ')),
         statRow(subj),
       ),
     );
 
     const comps = est.rows.map((r, i) => {
-      const photos = (r.comp.photos || []).slice(0, 4);
       return el('div', { class: 'rp-comp' },
-        el('div', { class: 'rp-comp-photo', style: r.comp.photo ? `background-image:url(${r.comp.photo})` : '' }),
+        el('div', { class: 'rp-comp-photo', style: r.comp.photo ? `background-image:url(${r.comp.photo})` : '' },
+          el('span', { class: 'rp-comp-no' }, String(i + 1))),
         el('div', { class: 'rp-comp-body' },
           el('div', { class: 'rp-comp-head' },
-            el('span', { class: 'rp-comp-addr' }, r.comp.address || ('Comparable ' + (i + 1))),
-            el('div', { class: 'rp-comp-adj' }, money(r.adjusted)),
+            el('div', {},
+              el('div', { class: 'rp-comp-kicker' }, 'Comparable ' + (i + 1)),
+              el('span', { class: 'rp-comp-addr' }, r.comp.address || ('Comparable ' + (i + 1)))),
+            el('div', { class: 'rp-comp-adjwrap' },
+              el('div', { class: 'rp-comp-adj' }, money(r.adjusted)),
+              el('div', { class: 'rp-comp-adjk' }, 'Adjusted')),
           ),
           statRow(r.comp),
           el('div', { class: 'rp-comp-prices' },
             el('span', {}, 'Sold ', el('strong', {}, money(r.comp.salePrice))),
+            el('span', { class: 'rp-arrow' }, '→'),
             el('span', { class: r.total > 0 ? 'pos' : r.total < 0 ? 'neg' : '' }, r.total ? signedMoney(r.total) + ' adjustments' : 'no adjustments'),
-            el('span', {}, '→ Adjusted ', el('strong', {}, money(r.adjusted))),
+            el('span', { class: 'rp-arrow' }, '→'),
+            el('span', {}, 'Adjusted ', el('strong', {}, money(r.adjusted))),
           ),
-          photos.length > 1 ? el('div', { class: 'rp-comp-gallery' }, ...photos.map(src => el('div', { class: 'rp-gthumb', style: `background-image:url(${src})` }))) : null,
         ),
       );
     });
 
     return page('analysis',
       runningHead(),
-      el('div', { class: 'rp-section-title' }, 'The Property & Comparables'),
+      el('div', { class: 'rp-section-head' },
+        el('div', { class: 'rp-eyebrow' }, 'Section one'),
+        el('div', { class: 'rp-section-title' }, 'The Property & Comparables')),
       subjectCard,
+      el('div', { class: 'rp-comps-label' }, 'Comparable sales used in this analysis'),
       el('div', { class: 'rp-comps' }, ...comps),
     );
   }
@@ -194,40 +212,89 @@ export function renderReport(root, ctx) {
 
     return page('grid-page',
       runningHead(),
-      el('div', { class: 'rp-section-title' }, 'Adjustment Detail' ),
+      el('div', { class: 'rp-section-head' },
+        el('div', { class: 'rp-eyebrow' }, 'Section two'),
+        el('div', { class: 'rp-section-title' }, 'Adjustment Detail')),
+      el('div', { class: 'rp-muted rp-section-note' },
+        'Each comparable is adjusted toward the subject — a plus adds value the comp lacks, a minus removes value the comp has — to arrive at an apples-to-apples figure.'),
       el('table', { class: 'rg' }, el('thead', {}, head), el('tbody', {}, ...rows, ...foot)),
       el('div', { class: 'rp-conclusion' },
-        el('div', {}, el('div', { class: 'rp-eyebrow' }, 'Suggested list price'),
-          el('div', { class: 'rp-muted', style: 'font-size:11px;max-width:400px' },
-            `Indicated value (average of adjusted comps): ${money(est.average)}${est.count >= 2 ? ` · range ${money(est.low)}–${money(est.high)}` : ''}. A CMA is an estimate based on comparable sales, not a formal appraisal.`),
+        el('div', { class: 'rp-concl-main' },
+          el('div', { class: 'rp-eyebrow' }, 'Suggested list price'),
+          est.count >= 2
+            ? el('div', { class: 'rp-concl-range' },
+                el('span', {}, 'Indicated range'),
+                el('strong', {}, `${money(est.low)} – ${money(est.high)}`))
+            : null,
+          el('div', { class: 'rp-muted rp-concl-note' },
+            `Indicated value — the average of the adjusted comparables — is ${money(est.average)}. A CMA is a considered estimate based on comparable sales, not a formal appraisal.`),
           agentContactLine()),
-        el('div', { class: 'rp-concl-value' }, money(value))),
+        el('div', { class: 'rp-concl-valwrap' },
+          el('div', { class: 'rp-concl-value' }, money(value)))),
     );
   }
 
   function activePage() {
-    const cards = cma.actives.map((a, i) => el('div', { class: 'rp-active' },
-      el('div', { class: 'rp-active-photo', style: a.photo ? `background-image:url(${a.photo})` : '' }),
-      el('div', {},
-        el('div', { class: 'rp-active-addr' }, a.address || ('Active ' + (i + 1))),
-        el('div', { class: 'rp-muted' }, [a.bedsTotal ? a.bedsTotal + ' bed' : '', a.bathsTotal ? a.bathsTotal + ' bath' : '', a.sqftMid ? Number(a.sqftMid).toLocaleString() + ' sqft' : ''].filter(Boolean).join(' · ')),
-        el('div', { class: 'rp-active-price' }, a.listPrice ? money(a.listPrice) : '—'),
-      )));
+    const cards = cma.actives.map((a, i) => {
+      const stats = [a.bedsTotal ? a.bedsTotal + ' bed' : '', a.bathsTotal ? a.bathsTotal + ' bath' : '', a.sqftMid ? Number(a.sqftMid).toLocaleString() + ' sqft' : '', garageDisplay(a) && garageDisplay(a) !== 'None' ? garageDisplay(a) + ' garage' : ''].filter(Boolean).join('   ·   ');
+      return el('div', { class: 'rp-active' },
+        a.photo
+          ? el('div', { class: 'rp-active-photo', style: `background-image:url(${a.photo})` })
+          : el('div', { class: 'rp-active-photo rp-photo-empty' }, el('span', {}, 'Active')),
+        el('div', { class: 'rp-active-body' },
+          el('div', { class: 'rp-active-kicker' }, 'Active listing ' + (i + 1)),
+          el('div', { class: 'rp-active-addr' }, a.address || ('Active ' + (i + 1))),
+          stats ? el('div', { class: 'rp-muted rp-active-stats' }, stats) : null,
+          el('div', { class: 'rp-active-price' }, a.listPrice ? money(a.listPrice) : '—'),
+        ));
+    });
     return page('active-page',
       runningHead(),
-      el('div', { class: 'rp-section-title' }, 'Currently on the Market'),
-      el('div', { class: 'rp-muted', style: 'margin-bottom:14px' }, 'Active listings the subject is competing against. Shown for context — not included in the estimated value.'),
+      el('div', { class: 'rp-section-head' },
+        el('div', { class: 'rp-eyebrow' }, 'Section three'),
+        el('div', { class: 'rp-section-title' }, 'Currently on the Market')),
+      el('div', { class: 'rp-muted rp-section-note' }, 'Active listings the subject would compete against today. Shown for context — they are asking prices, not sales, and are not included in the estimated value.'),
       el('div', { class: 'rp-actives' }, ...cards));
   }
 
+  // Full-page MLS renders for comparables (the supporting documentation).
   function appendixPages() {
-    const pages = [];
-    cma.comps.forEach((c, ci) => (c.pages || []).forEach((url, pi) => {
-      pages.push(page('appendix',
-        el('div', { class: 'rp-appendix-cap' }, `Comparable ${ci + 1} — ${c.address || ''} — MLS page ${pi + 1}`),
-        el('img', { class: 'rp-page-img', src: url })));
-    }));
-    return pages;
+    return mediaAppendix(cma.comps, 'Comparable');
+  }
+  // Full-page MLS renders + photos for any actives that carry media (manual
+  // entries without pages/photos are skipped). Placed after the comps' appendix.
+  function activeAppendixPages() {
+    return mediaAppendix(cma.actives, 'Active listing');
+  }
+  // Shared: emit one appendix page per full MLS page-render. For records that
+  // carry photos but NO page-renders (e.g. a manually-added active with only
+  // photos), fall back to a photo contact-sheet so their photos still appear.
+  // Records with neither pages nor photos (plain manual entries) are skipped.
+  function mediaAppendix(records, label) {
+    const out = [];
+    records.forEach((rec, ri) => {
+      const recPages = rec.pages || [];
+      const recPhotos = rec.photos || [];
+      if (recPages.length) {
+        recPages.forEach((url, pi) => {
+          out.push(page('appendix',
+            appendixCap(label, ri, rec.address, `MLS page ${pi + 1}`),
+            el('div', { class: 'rp-page-frame' }, el('img', { class: 'rp-page-img', src: url }))));
+        });
+      } else if (recPhotos.length) {
+        out.push(page('appendix',
+          appendixCap(label, ri, rec.address, 'Listing photos'),
+          el('div', { class: 'rp-photo-grid' }, ...recPhotos.slice(0, 12).map(src =>
+            el('div', { class: 'rp-photo-cell', style: `background-image:url(${src})` })))));
+      }
+    });
+    return out;
+  }
+  function appendixCap(label, idx, address, suffix) {
+    return el('div', { class: 'rp-appendix-cap' },
+      el('span', { class: 'rp-appendix-tag' }, `${label} ${idx + 1}`),
+      el('span', { class: 'rp-appendix-addr' }, address || ''),
+      el('span', { class: 'rp-appendix-suffix' }, suffix));
   }
 
   function runningHead() {

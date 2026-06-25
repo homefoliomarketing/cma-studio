@@ -192,6 +192,9 @@ export const App = {
       next: () => this.next(),
       refresh: () => this.render(),
       save: () => this.save(),
+      // Persist the whole CMA to the agent's account (used by the report's
+      // Print/Save button so printing also saves). Reuses saveNow's flow.
+      saveToServer: () => this.saveNow(),
       saveSettings: async () => { await store.persistSettings(this.settings); },
       applyBranding: () => this.applyBranding(),
     };

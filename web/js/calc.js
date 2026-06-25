@@ -11,12 +11,33 @@ import { ITEM_DEFS, CONDITION_LEVELS } from './state.js';
 const num = (x) => (x == null || x === '' || isNaN(x)) ? 0 : Number(x);
 const condIdx = (lvl) => Math.max(0, CONDITION_LEVELS.indexOf(lvl));
 
+// True if the property has any AC. Reads the new `ac` enum, falling back to the
+// legacy boolean `centralAir` for CMAs saved before AC became a 3-way choice.
+function hasAC(p) {
+  if (p.ac != null && p.ac !== '') return p.ac === 'Central' || p.ac === 'Ductless Split';
+  return !!p.centralAir;
+}
+
+// Garage spaces implied by a garageType label (for the adjustment math).
+const GARAGE_SPACES = { 'None': 0, 'Single': 1, '1.5 Car': 1.5, 'Double': 2, 'Triple': 3 };
+// Resolve a property's garage to {has, spaces}, preferring the new `garageType`
+// label and falling back to the legacy hasGarage/garageSpaces fields.
+function garageInfo(p) {
+  if (p.garageType != null && p.garageType !== '') {
+    if (p.garageType === 'None') return { has: false, spaces: 0 };
+    const sp = GARAGE_SPACES[p.garageType] ?? 1; // 'Other' / free text → 1
+    return { has: true, spaces: sp };
+  }
+  if (p.hasGarage) return { has: true, spaces: Math.max(1, Number(p.garageSpaces) || 1) };
+  return { has: false, spaces: 0 };
+}
+
 // Dollar "worth" of a property's garage: none = 0; otherwise a base value for
 // having one at all (noGarage) plus an extra amount per space beyond the first.
 function garageValue(p, presets) {
-  if (!p.hasGarage) return 0;
-  const spaces = Math.max(1, num(p.garageSpaces) || 1);
-  return presets.noGarage + (spaces - 1) * presets.garageSpace;
+  const g = garageInfo(p);
+  if (!g.has) return 0;
+  return presets.noGarage + (g.spaces - 1) * presets.garageSpace;
 }
 
 // Is there a finished (or partly finished) basement?
@@ -39,7 +60,7 @@ export function suggestAdjustment(item, subject, comp, presets) {
       const s = bathsSplit(subject), c = bathsSplit(comp);
       return (s.full - c.full) * p.fullBath + (s.half - c.half) * p.halfBath;
     }
-    case 'air':   return ((subject.centralAir ? 1 : 0) - (comp.centralAir ? 1 : 0)) * p.centralAir;
+    case 'air':   return ((hasAC(subject) ? 1 : 0) - (hasAC(comp) ? 1 : 0)) * p.centralAir;
     case 'garage': return garageValue(subject, p) - garageValue(comp, p);
     case 'heating': return heatingValue(subject, p) - heatingValue(comp, p);
     case 'basement': {
@@ -105,11 +126,13 @@ export function adjustedPrice(comp, total) {
   return num(comp.salePrice) + total;
 }
 
-// "No" / "Yes · 2 spaces" — shared by the grid and the report.
+// "None" / "Double" / "2 car" — shared by the grid and the report. Prefers the
+// new garageType label, falling back to the legacy hasGarage/garageSpaces.
 export function garageDisplay(p) {
-  if (!p.hasGarage) return 'No';
+  if (p.garageType != null && p.garageType !== '') return p.garageType;
+  if (!p.hasGarage) return 'None';
   const n = num(p.garageSpaces);
-  return n >= 1 ? `Yes · ${n} space${n === 1 ? '' : 's'}` : 'Yes';
+  return n >= 1 ? `${n} car` : 'Yes';
 }
 
 // "None" / "Full Basement · Fully" — shared by the grid and the report.
@@ -129,7 +152,7 @@ export function itemDisplay(item, p) {
     case 'heating': return p.heating || '—';
     case 'garage': return garageDisplay(p);
     case 'basement': return basementDisplay(p);
-    case 'air': return p.centralAir ? 'Yes' : 'No';
+    case 'air': return (p.ac && p.ac !== '') ? p.ac : (p.centralAir ? 'Central' : 'No');
     case 'intCond': return p.interiorCondition || '—';
     case 'extCond': return p.exteriorCondition || '—';
     default: return '—';

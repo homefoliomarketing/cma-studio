@@ -1,7 +1,7 @@
 // Step 2 — comparables (sold, used for the math) + active competition (context only).
 import { el, flash, money } from '../ui.js';
-import { CONDITION_LEVELS, HEATING_OPTIONS, STYLE_OPTIONS, BASEMENT_OPTIONS, BASEMENT_FINISH_OPTIONS, blankComp, blankActive, uploadPdf, applyUpload } from '../state.js';
-import { textField, moneyField, numberField, stepper, chipsField, boolField, optionField, garageField } from '../forms.js';
+import { CONDITION_LEVELS, HEATING_OPTIONS, AC_OPTIONS, STYLE_OPTIONS, BASEMENT_OPTIONS, BASEMENT_FINISH_OPTIONS, blankComp, blankActive, uploadPdf, applyUpload } from '../state.js';
+import { textField, moneyField, numberField, stepper, chipsField, optionField, garageField } from '../forms.js';
 
 const MAX_COMPS = 4;
 const MAX_ACTIVES = 6;
@@ -91,20 +91,47 @@ function makeDropzone(ctx, opts) {
   return zone;
 }
 
-function heroEl(rec, ctx) {
-  return el('div', {
-    class: 'comp-hero' + (rec.photo ? '' : ' empty'),
-    style: rec.photo ? `background-image:url(${rec.photo})` : '',
-  }, rec.photo ? '' : el('span', { class: 'muted' }, '🏠 No photo found'));
-}
-function thumbsEl(rec, ctx) {
-  if (!(rec.photos && rec.photos.length > 1)) return null;
-  return el('div', { class: 'comp-thumbs' },
-    ...rec.photos.map(src => el('div', {
-      class: 'comp-thumb' + (src === rec.photo ? ' on' : ''),
-      style: `background-image:url(${src})`,
-      onclick: () => { rec.photo = src; ctx.refresh(); },
-    })));
+// Photos are NOT loaded while working through comparables (the realtor has
+// already seen them) — they stay collapsed behind a toggle so no image bytes
+// load until clicked. The photo data (rec.photo/photos/pages) is untouched and
+// the report still renders it. Click a thumbnail to choose the hero (rec.photo).
+function photosControl(rec, ctx) {
+  const count = (rec.photos && rec.photos.length) || (rec.photo ? 1 : 0);
+  const wrap = el('div', { class: 'comp-photos' });
+
+  const toggle = el('button', {
+    class: 'btn btn-ghost btn-sm', type: 'button',
+    style: 'margin:10px 14px 0',
+  }, count ? `🖼 Show ${count} photo${count === 1 ? '' : 's'}` : '🏠 No photos');
+  if (!count) { toggle.disabled = ''; wrap.append(toggle); return wrap; }
+
+  const gallery = el('div', { style: 'display:none' });
+  let built = false;
+  const build = () => {
+    const hero = el('div', {
+      class: 'comp-hero' + (rec.photo ? '' : ' empty'),
+      style: rec.photo ? `background-image:url(${rec.photo})` : '',
+    }, rec.photo ? '' : el('span', { class: 'muted' }, '🏠 No photo found'));
+    gallery.append(hero);
+    if (rec.photos && rec.photos.length > 1) {
+      gallery.append(el('div', { class: 'comp-thumbs' },
+        ...rec.photos.map(src => el('div', {
+          class: 'comp-thumb' + (src === rec.photo ? ' on' : ''),
+          style: `background-image:url(${src})`,
+          onclick: () => { rec.photo = src; ctx.refresh(); },
+        }))));
+    }
+  };
+
+  toggle.addEventListener('click', () => {
+    const show = gallery.style.display === 'none';
+    if (show && !built) { build(); built = true; } // load images only on first open
+    gallery.style.display = show ? '' : 'none';
+    toggle.textContent = show ? '🖼 Hide photos' : `🖼 Show ${count} photo${count === 1 ? '' : 's'}`;
+  });
+
+  wrap.append(toggle, gallery);
+  return wrap;
 }
 
 function compCard(comp, i, ctx) {
@@ -157,10 +184,10 @@ function compCard(comp, i, ctx) {
     el('div', { class: 'form-grid', style: 'margin-top:14px' },
       optionField('Style', comp, 'style', STYLE_OPTIONS, { wide: true, onChange: save }),
       garageField('Garage', comp, { onChange: save }),
-      boolField('Central air', comp, 'centralAir', { onChange: save }),
       basementField,
       finishField,
       optionField('Heating', comp, 'heating', HEATING_OPTIONS, { wide: true, onChange: save }),
+      optionField('Air Conditioning', comp, 'ac', AC_OPTIONS, { onChange: save }),
     ),
     el('div', { class: 'form-grid', style: 'margin-top:4px' },
       chipsField('Interior condition', comp, 'interiorCondition', CONDITION_LEVELS, { wide: true, onChange: save }),
@@ -168,7 +195,7 @@ function compCard(comp, i, ctx) {
     ),
   );
 
-  return el('div', { class: 'card comp-card' }, heroEl(comp, ctx), thumbsEl(comp, ctx),
+  return el('div', { class: 'card comp-card' }, photosControl(comp, ctx),
     el('div', { class: 'card-pad' }, header, priceRow, details));
 }
 
@@ -196,6 +223,6 @@ function activeCard(a, i, ctx) {
     textField('Style', a, 'style', { onChange: save }),
     textField('Lot size', a, 'lot', { onChange: save }),
   );
-  return el('div', { class: 'card comp-card active-card' }, heroEl(a, ctx), thumbsEl(a, ctx),
+  return el('div', { class: 'card comp-card active-card' }, photosControl(a, ctx),
     el('div', { class: 'card-pad' }, header, grid));
 }

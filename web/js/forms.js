@@ -1,5 +1,6 @@
 // Reusable, click-friendly form controls shared by Subject and Comps.
 import { el, parseMoney } from './ui.js';
+import { GARAGE_OPTIONS } from './state.js';
 
 const plain = (n) => (n == null || n === '' || isNaN(n)) ? '' : Number(n).toLocaleString('en-CA');
 
@@ -162,36 +163,11 @@ export function optionField(label, obj, key, options, opts = {}) {
   return el('div', { class: 'field' + (opts.wide ? ' col-2' : '') }, el('label', {}, label), wrap, opts.noOther ? null : other);
 }
 
-// Garage Yes/No with a "number of spaces" stepper that appears only on "Yes".
-// Reads/writes obj.hasGarage (bool) and obj.garageSpaces (number).
+// Labelled garage size selector (None / Single / 1.5 Car / Double / Triple /
+// Other). Reads/writes obj.garageType; "Other" reveals a free-text input. The
+// adjustment math maps each label → a span count via calc.js garageInfo.
 export function garageField(label, obj, opts = {}) {
-  const spaces = el('div', { class: 'subfield' });
-  const drawSpaces = () => {
-    spaces.innerHTML = '';
-    if (!obj.hasGarage) { spaces.style.display = 'none'; return; }
-    spaces.style.display = '';
-    const val = el('span', { class: 'val' }, String(obj.garageSpaces || 1));
-    const bump = (d) => { obj.garageSpaces = Math.max(1, (Number(obj.garageSpaces) || 1) + d); val.textContent = String(obj.garageSpaces); opts.onChange?.(); };
-    spaces.append(
-      el('label', { class: 'sublabel' }, 'Number of spaces'),
-      el('div', { class: 'stepper' },
-        el('button', { type: 'button', onclick: () => bump(-1) }, '−'),
-        val,
-        el('button', { type: 'button', onclick: () => bump(1) }, '+')),
-    );
-  };
-  const chips = el('div', { class: 'chips' });
-  [['Yes', true], ['No', false]].forEach(([txt, v]) => {
-    const chip = el('button', { type: 'button', class: 'chip' + (!!obj.hasGarage === v ? ' on' : '') }, txt);
-    chip.addEventListener('click', () => {
-      obj.hasGarage = v;
-      if (v && !(obj.garageSpaces > 0)) obj.garageSpaces = 1;
-      if (!v) obj.garageSpaces = 0;
-      [...chips.children].forEach(c => c.classList.remove('on')); chip.classList.add('on');
-      drawSpaces(); opts.onChange?.();
-    });
-    chips.append(chip);
+  return optionField(label, obj, 'garageType', GARAGE_OPTIONS, {
+    otherPh: 'e.g. Carport', onChange: opts.onChange,
   });
-  drawSpaces();
-  return el('div', { class: 'field' }, el('label', {}, label), chips, spaces);
 }

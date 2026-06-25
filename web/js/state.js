@@ -5,10 +5,15 @@ export const CONDITION_LEVELS = ['Dated', 'Updated', 'Good', 'Excellent', 'New']
 
 // ---- Click-to-select option lists (realtor's vocabulary) ------------------
 // Each is offered as buttons; an "Other" button lets the realtor type anything.
-export const HEATING_OPTIONS  = ['Gas Forced Air', 'Propane Forced Air', 'Electric Baseboard', 'Space Heater'];
+export const HEATING_OPTIONS  = ['Gas Forced Air', 'Gas Boiler', 'Propane Forced Air', 'Electric Baseboard', 'Space Heater'];
 export const STYLE_OPTIONS    = ['Bungalow', 'Raised bungalow', '2-storey', '1.5 storey', 'Bi-level', 'Backsplit', 'Sidesplit', 'Townhouse'];
 export const BASEMENT_OPTIONS = ['None', 'Full Basement'];
 export const BASEMENT_FINISH_OPTIONS = ['Fully', 'Partially', 'Unfinished'];
+// Air-conditioning is a 3-way choice; both Central and Ductless Split count as
+// "has AC" for the adjustment math (see calc.js hasAC).
+export const AC_OPTIONS = ['No', 'Central', 'Ductless Split'];
+// Garage as labelled sizes; GARAGE_SPACES in calc.js maps each to a span count.
+export const GARAGE_OPTIONS = ['None', 'Single', '1.5 Car', 'Double', 'Triple', 'Other'];
 
 // ---- Editable adjustment presets -----------------------------------------
 // IMPORTANT: these are STARTING SUGGESTIONS, not verified market values.
@@ -30,6 +35,7 @@ export function defaultSettings() {
       conditionPerLevel:10000,  // per step on the condition scale
       heating: {                // value of each heating system; only the
         'Gas Forced Air':     15000,  // DIFFERENCE between subject & comp applies.
+        'Gas Boiler':         15000,  // editable starting suggestion (= Gas Forced Air)
         'Propane Forced Air': 13000,  // Gas/Propane are estimates — tune in Settings.
         'Electric Baseboard':     0,
         'Space Heater':           0,
@@ -63,7 +69,7 @@ export const ITEM_DEFS = [
   { key: 'heating',   label: 'Heating type',       type: 'manual',  field: 'heating' },
   { key: 'garage',    label: 'Garage',             type: 'garage',  field: 'garage' },
   { key: 'basement',  label: 'Basement',           type: 'manual',  field: 'basementFinish' },
-  { key: 'air',       label: 'Central air',        type: 'bool',    unit: 'centralAir', field: 'centralAir' },
+  { key: 'air',       label: 'Air Conditioning',   type: 'bool',    unit: 'centralAir', field: 'ac' },
   { key: 'intCond',   label: 'Interior condition', type: 'condition', field: 'interiorCondition' },
   { key: 'extCond',   label: 'Exterior condition', type: 'condition', field: 'exteriorCondition' },
 ];
@@ -79,9 +85,9 @@ export function blankProperty() {
     bathsFull: null, bathsHalf: null, bathsTotal: null,
     sqftRaw: '', sqftMid: null,
     lot: '', style: '', heating: '',
-    garage: '', hasGarage: false, garageSpaces: 0,
+    garage: '', garageType: '', hasGarage: false, garageSpaces: 0,
     basement: '', basementFinish: '',
-    centralAir: false,
+    ac: '', centralAir: false,
     interiorCondition: 'Good', exteriorCondition: 'Good',
     age: '', taxes: null,
     photo: null,         // chosen hero photo (data URL or /api/media URL)
@@ -124,18 +130,41 @@ export function newCMA() {
   };
 }
 
-// Infer the Yes/No + number-of-spaces garage model from a free-text MLS value.
-export function inferGarage(str) {
+// Infer a labelled garage size (one of GARAGE_OPTIONS) from a free-text MLS
+// value. Unknown text (e.g. "Attached, Detached") is kept verbatim so the UI
+// surfaces it via the "Other" chip. calc.js garageInfo maps the label → spaces.
+export function inferGarageType(str) {
   const s = (str || '').toLowerCase();
-  if (!s || /\bnone\b|no garage|^\s*0\b|^\s*no\b/.test(s)) return { hasGarage: false, garageSpaces: 0 };
-  let n = 0;
+  if (!s || /\bnone\b|no garage|^\s*0\b|^\s*no\b/.test(s)) return 'None';
+  if (/1\.5|1 1\/2/.test(s)) return '1.5 Car';
   const m = s.match(/(\d+(?:\.\d+)?)/);
-  if (m) n = Math.round(parseFloat(m[1]));
-  else if (/triple|3\s*car/.test(s)) n = 3;
-  else if (/double|2\s*car/.test(s)) n = 2;
-  else if (/single|1\s*car/.test(s)) n = 1;
-  if (!n) n = 1;
-  return { hasGarage: true, garageSpaces: n };
+  if (m) { const n = parseFloat(m[1]); if (n >= 3) return 'Triple'; if (n === 2) return 'Double'; if (n === 1) return 'Single'; }
+  if (/triple|3\s*car/.test(s)) return 'Triple';
+  if (/double|2\s*car/.test(s)) return 'Double';
+  if (/single|1\s*car/.test(s)) return 'Single';
+  return str; // unknown text (e.g. "Attached, Detached") → kept as free-text "Other"
+}
+
+// Map the MLS's separate "heating type" + "heating source" onto one of our
+// canonical HEATING_OPTIONS. Unmatched combos fall back to a readable string
+// (which the UI shows via the "Other" chip). Tolerant to casing/wording.
+export function normalizeHeating(type, source) {
+  const t = (type || '').toLowerCase();
+  const s = (source || '').toLowerCase();
+  const gas = /gas|natural/.test(s);
+  const propane = /propane/.test(s);
+  const electric = /electric/.test(s);
+  const forcedAir = /forced/.test(t);
+  const boiler = /boiler|hot water|radiant|hydronic/.test(t);
+  const baseboard = /baseboard/.test(t);
+  const spaceHeater = /space heater/.test(t) || /space heater/.test(s);
+  if (gas && forcedAir) return 'Gas Forced Air';
+  if (propane && forcedAir) return 'Propane Forced Air';
+  if (gas && boiler) return 'Gas Boiler';
+  if (propane && boiler) return 'Propane Forced Air';
+  if (baseboard) return 'Electric Baseboard';
+  if (spaceHeater) return 'Space Heater';
+  return [type, source].filter(Boolean).join(' / ');
 }
 
 // ---- Map a parsed MLS PDF (server JSON) onto a property record ------------
@@ -156,14 +185,13 @@ export function fromParsed(p) {
   prop.sqftMid = p.sqft?.mid ?? null;
   prop.lot = p.lot_size || '';
   prop.style = p.style || p.sub_type || '';
-  prop.heating = [p.heating_type, p.heating_source].filter(Boolean).join(' / ');
+  prop.heating = normalizeHeating(p.heating_type, p.heating_source);
   prop.garage = p.garage || '';
-  const g = inferGarage(p.garage);
-  prop.hasGarage = g.hasGarage;
-  prop.garageSpaces = g.garageSpaces;
+  prop.garageType = inferGarageType(p.garage);
   prop.basement = p.basement || '';
   prop.basementFinish = p.basement_finish || '';
-  prop.centralAir = !!p.central_air;
+  prop.ac = p.central_air ? 'Central' : 'No';
+  prop.centralAir = !!p.central_air; // legacy field kept for back-compat
   prop.age = p.age?.raw || '';
   prop.taxes = p.annual_taxes ?? null;
   prop.rooms = p.rooms || [];
@@ -261,13 +289,17 @@ export function applyUpload(prop, result) {
 export async function saveCmaToServer(cma) {
   cma.savedAt = new Date().toISOString();
   if (!isUuid(cma.id)) cma.id = (crypto.randomUUID ? crypto.randomUUID() : 'cma_' + Date.now());
-  const user_id = await currentUid();
+  // Pull the user id from a FRESH session and fail loudly if signed out, rather
+  // than writing a null/blank user_id that RLS would silently reject.
+  const { data: { session } } = await supabase.auth.getSession();
+  const user_id = session?.user?.id;
+  if (!user_id) throw new Error('You appear to be signed out — please sign in again, then save.');
   const { error } = await supabase.from('cmas').upsert({
     id: cma.id,
     user_id,
     title: cma.title || cma.subject?.address || 'Untitled CMA',
     data: cma,
-  });
+  }, { onConflict: 'id' });
   if (error) throw new Error(error.message);
   return { ok: true, id: cma.id };
 }
