@@ -4,7 +4,10 @@
 // on every table is what actually protects each agent's data. The SECRET key is
 // NEVER placed here (or anywhere in this repo). supabase-js is loaded as an ES
 // module straight from the CDN, so there's no build step.
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+//
+// Pinned to an EXACT version (not a floating @2): esm.sh serves immutable content
+// per exact version, so this can't silently change under us. Bump deliberately.
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
 
 export const SUPABASE_URL = 'https://bzppmddqkajswjjrxbem.supabase.co';
 export const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_yy9y6niM0KuGUS3PJ2IDbQ_dNCGqBuj';

@@ -14,14 +14,43 @@ create table if not exists public.profiles (
   phone        text,
   email        text,
   headshot_url text,
-  is_admin     boolean not null default false,   -- Bud = true; reserved for later admin features
+  is_admin     boolean not null default false,   -- Bud = true; promote ONLY via the service role / SQL editor
+  must_reset   boolean not null default true,    -- force "choose your own password" on first login
   created_at   timestamptz not null default now(),
   updated_at   timestamptz not null default now()
 );
 alter table public.profiles enable row level security;
 create policy "profiles_select_own" on public.profiles for select using (auth.uid() = id);
 create policy "profiles_insert_own" on public.profiles for insert with check (auth.uid() = id);
+-- NOTE: this UPDATE policy scopes which ROW an agent may write (their own).
+-- It does NOT (and cannot) restrict which COLUMNS — that is enforced below by
+-- column-level grants + the profiles_guard trigger, which together stop an agent
+-- from setting their own is_admin = true (privilege escalation). See
+-- supabase/harden_security.sql for the standalone migration + rationale.
 create policy "profiles_update_own" on public.profiles for update using (auth.uid() = id) with check (auth.uid() = id);
+
+-- Column-level write lockdown: an agent may edit only their own identity fields,
+-- never is_admin / id / created_at. (Postgres RLS gates rows, not columns.)
+revoke update on public.profiles from authenticated, anon;
+grant  update (full_name, title, phone, email, headshot_url, must_reset)
+  on public.profiles to authenticated;
+
+-- Defence-in-depth: pin the protected columns for any PostgREST client role,
+-- even if broad UPDATE is ever re-granted. The service role (admin API) and the
+-- table owner (SQL editor) are unaffected, so intentional promotion still works.
+create or replace function public.profiles_guard_protected_columns()
+  returns trigger language plpgsql as $$
+begin
+  if current_user in ('authenticated', 'anon') then
+    new.is_admin   := old.is_admin;
+    new.id         := old.id;
+    new.created_at := old.created_at;
+  end if;
+  return new;
+end; $$;
+drop trigger if exists profiles_guard on public.profiles;
+create trigger profiles_guard before update on public.profiles
+  for each row execute function public.profiles_guard_protected_columns();
 
 -- ============================================================
 -- cmas — one row per saved CMA, owned by the agent who made it.
@@ -68,6 +97,9 @@ create policy "org_settings_read_all" on public.org_settings for select
 create policy "org_settings_write_admin" on public.org_settings for update
   using (exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin))
   with check (exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin));
+-- The settings row is a singleton: clients may read (all) and admins may update,
+-- but nobody may add a second row or delete it. (RLS default-denies these too.)
+revoke insert, delete on public.org_settings from authenticated, anon;
 insert into public.org_settings (id) values (1) on conflict (id) do nothing;
 
 -- ============================================================

@@ -2,7 +2,7 @@
 // + adjustment presets (admins only). The company brand and presets live in
 // org_settings and are shared office-wide; an agent's name/title/phone/email/
 // headshot live in their own profile.
-import { el, flash, debounce } from '../ui.js';
+import { el, flash, debounce, safeImageUrl } from '../ui.js';
 import { defaultSettings, HEATING_OPTIONS } from '../state.js';
 import { textField, moneyField, photoField } from '../forms.js';
 import { listAgents, createAgent, deleteAgent, resetAgentPassword, currentUserId, genTempPassword } from '../admin.js';
@@ -129,7 +129,7 @@ export function renderSettings(root, ctx) {
       el('div', { class: 'panel-sub' },
         'Your office’s brand and adjustment presets are managed by your office admin and shared across everyone. They apply automatically to your reports.'),
       el('div', { class: 'company-readonly' },
-        b.logo ? el('img', { src: b.logo, class: 'ro-logo', alt: b.companyName }) : null,
+        safeImageUrl(b.logo) ? el('img', { src: safeImageUrl(b.logo), class: 'ro-logo', alt: b.companyName }) : null,
         el('div', {},
           el('div', { class: 'ro-company' }, b.companyName || 'CENTURY 21'),
           el('div', { class: 'muted' }, b.tagline || ''),
@@ -143,7 +143,11 @@ export function renderSettings(root, ctx) {
     el('div', { class: 'muted' }, 'Settings save automatically and apply across the whole app.'),
     el('button', {
       class: 'btn btn-primary',
-      onclick: () => { ctx.saveSettings(); ctx.applyBranding(); ctx.refresh(); flash('Settings saved ✓'); },
+      onclick: async () => {
+        const ok = await ctx.saveSettings();
+        ctx.applyBranding();
+        if (ok) { ctx.refresh(); flash('Settings saved ✓'); }
+      },
     }, 'Save & apply'),
   );
 

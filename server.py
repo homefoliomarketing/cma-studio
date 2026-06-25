@@ -1,6 +1,11 @@
 """
 Local web server for the CMA tool.
 
+NOTE: This is the LOCAL, single-user server (binds 127.0.0.1, file-based, no
+auth). The multi-user CLOUD deployment uses service.py instead — keep the shared
+bits (the /api/parse contract, MAX_UPLOAD, and the static-file path-traversal
+guard below) in sync between the two files.
+
 Runs entirely on the realtor's own computer. Uses only the Python standard
 library plus PyMuPDF (already installed) -- nothing else to install.
 
@@ -190,8 +195,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if path == "/":
             path = "/index.html"
         rel = os.path.normpath(path).lstrip("\\/")
+        web_root = os.path.abspath(WEB_DIR)
         full = os.path.abspath(os.path.join(WEB_DIR, rel))
-        if not full.startswith(os.path.abspath(WEB_DIR)) or not os.path.isfile(full):
+        # Trailing-sep check contains the path to WEB_DIR and avoids the
+        # sibling-prefix bug a bare startswith(web_root) would allow.
+        if not (full == web_root or full.startswith(web_root + os.sep)) or not os.path.isfile(full):
             self.send_error(404, "Not found")
             return
         ctype = mimetypes.guess_type(full)[0] or "application/octet-stream"

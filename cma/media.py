@@ -18,6 +18,24 @@ import fitz  # PyMuPDF
 _MIN_W = 200
 _MIN_H = 160
 _MAX_PHOTOS = 40
+# Hostile/huge PDFs: cap how many pages we scan/render and the pixels we'll
+# allocate for any single image, so one upload can't exhaust server memory.
+# A real MLS sheet is a handful of pages; 40 is generous headroom.
+_MAX_PAGES = 40
+_MAX_PIXELS = 25_000_000  # ~25 megapixels per page/image
+
+
+def _safe_matrix(page, zoom):
+    """A render matrix that won't allocate an absurd pixmap. Caps the zoom so the
+    rendered page can't exceed _MAX_PIXELS, so a page with a giant MediaBox can't
+    OOM the process; normal pages render at the requested zoom unchanged."""
+    rect = page.rect
+    w = max(1.0, float(rect.width))
+    h = max(1.0, float(rect.height))
+    max_zoom = (_MAX_PIXELS / (w * h)) ** 0.5
+    if max_zoom < zoom:
+        zoom = max(0.05, max_zoom)  # tiny floor avoids a zero-size matrix
+    return fitz.Matrix(zoom, zoom)
 
 
 def _pix_to_jpeg(pix, quality=82):
@@ -28,16 +46,30 @@ def _pix_to_jpeg(pix, quality=82):
     return pix.tobytes("jpeg", jpg_quality=quality)
 
 
+def _too_big(info):
+    """True if an embedded image's declared dimensions exceed the pixel cap, so
+    we can skip it WITHOUT allocating the pixmap. info = get_images(full=True)
+    tuple: (xref, smask, width, height, ...)."""
+    try:
+        return (int(info[2]) * int(info[3])) > _MAX_PIXELS
+    except Exception:
+        return False
+
+
 def extract_photos(doc, out_dir, prefix="photo"):
     """Save large embedded images as JPEGs. Returns a list of filenames."""
     names = []
     seen = set()
-    for page in doc:
+    for pi, page in enumerate(doc):
+        if pi >= _MAX_PAGES:
+            break
         for info in page.get_images(full=True):
             xref = info[0]
             if xref in seen:
                 continue
             seen.add(xref)
+            if _too_big(info):
+                continue
             try:
                 pix = fitz.Pixmap(doc, xref)
                 if pix.width < _MIN_W or pix.height < _MIN_H:
@@ -57,10 +89,11 @@ def extract_photos(doc, out_dir, prefix="photo"):
 def render_pages(doc, out_dir, prefix="page", zoom=2.0):
     """Render each page to a JPEG. Returns a list of filenames (page order)."""
     names = []
-    mat = fitz.Matrix(zoom, zoom)
     for i, page in enumerate(doc):
+        if i >= _MAX_PAGES:
+            break
         try:
-            pix = page.get_pixmap(matrix=mat)
+            pix = page.get_pixmap(matrix=_safe_matrix(page, zoom))
             data = _pix_to_jpeg(pix, quality=80)
         except Exception:
             continue
@@ -75,12 +108,16 @@ def extract_photos_b64(doc):
     """Like extract_photos, but return base64 JPEG data URIs instead of files."""
     uris = []
     seen = set()
-    for page in doc:
+    for pi, page in enumerate(doc):
+        if pi >= _MAX_PAGES:
+            break
         for info in page.get_images(full=True):
             xref = info[0]
             if xref in seen:
                 continue
             seen.add(xref)
+            if _too_big(info):
+                continue
             try:
                 pix = fitz.Pixmap(doc, xref)
                 if pix.width < _MIN_W or pix.height < _MIN_H:
@@ -98,10 +135,11 @@ def extract_photos_b64(doc):
 def render_pages_b64(doc, zoom=2.0):
     """Like render_pages, but return base64 JPEG data URIs (page order)."""
     uris = []
-    mat = fitz.Matrix(zoom, zoom)
-    for page in doc:
+    for i, page in enumerate(doc):
+        if i >= _MAX_PAGES:
+            break
         try:
-            pix = page.get_pixmap(matrix=mat)
+            pix = page.get_pixmap(matrix=_safe_matrix(page, zoom))
             data = _pix_to_jpeg(pix, quality=80)
         except Exception:
             continue

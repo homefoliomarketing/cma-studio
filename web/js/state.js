@@ -1,5 +1,6 @@
 // The CMA data model, editable defaults, and saving/loading.
 import { supabase, MEDIA_BUCKET } from './supa.js';
+import { safeHexColor, safeImageUrl } from './ui.js';
 
 export const CONDITION_LEVELS = ['Dated', 'Updated', 'Good', 'Excellent', 'New'];
 
@@ -226,7 +227,14 @@ async function currentUid() {
 }
 
 const isUuid = (s) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s || '');
-const rnd = () => Math.random().toString(36).slice(2, 10);
+// Unguessable storage path segment. MUST be a CSPRNG (these segments are the
+// only thing standing between a public-bucket object URL and the world), so we
+// never use Math.random here. 64 bits of crypto randomness.
+const rnd = () => {
+  const a = new Uint8Array(8);
+  crypto.getRandomValues(a);
+  return Array.from(a, x => x.toString(16).padStart(2, '0')).join('');
+};
 
 // Decode a "data:image/...;base64,xxxx" URI into a Blob ready for upload.
 function dataUriToBlob(uri) {
@@ -261,7 +269,11 @@ async function uploadImages(uris, prefix) {
 // and page-renders; we upload those images to this agent's Storage folder and
 // return their public URLs. Path: media/{uid}/{cmaId}/{uploadId}/photo_N.jpg
 export async function uploadPdf(file, cmaId) {
-  const res = await fetch('/api/parse', { method: 'POST', body: file });
+  // Attach the agent's token so the (production) parse endpoint can confirm a
+  // signed-in caller. Harmless locally where parsing is open.
+  const { data: { session } } = await supabase.auth.getSession();
+  const headers = session?.access_token ? { Authorization: 'Bearer ' + session.access_token } : {};
+  const res = await fetch('/api/parse', { method: 'POST', headers, body: file });
   const json = await res.json();
   if (!json.ok) throw new Error(json.error || 'Could not read this PDF.');
   const uid = await currentUid();
@@ -314,7 +326,26 @@ export async function openCma(id) {
   if (error || !data) throw new Error('Could not open that CMA.');
   return data.data;
 }
+// Best-effort: remove this CMA's photos/page-renders from Storage so a "delete"
+// doesn't leave the client's property images sitting in the bucket forever
+// (privacy + unbounded storage growth). Never blocks the row delete.
+async function removeCmaMedia(id) {
+  try {
+    const uid = await currentUid();
+    if (!uid || !id) return;
+    const base = `${uid}/${id}`;
+    const { data: subdirs } = await supabase.storage.from(MEDIA_BUCKET).list(base, { limit: 1000 });
+    const paths = [];
+    for (const dir of subdirs || []) {
+      const { data: files } = await supabase.storage.from(MEDIA_BUCKET).list(`${base}/${dir.name}`, { limit: 1000 });
+      for (const f of files || []) paths.push(`${base}/${dir.name}/${f.name}`);
+    }
+    if (paths.length) await supabase.storage.from(MEDIA_BUCKET).remove(paths);
+  } catch { /* ignore — cleanup is best-effort */ }
+}
+
 export async function deleteCma(id) {
+  await removeCmaMedia(id);
   const { error } = await supabase.from('cmas').delete().eq('id', id);
   if (error) throw new Error(error.message);
 }
@@ -347,18 +378,20 @@ export async function loadSettings() {
   _isAdmin = !!(profile && profile.is_admin);
   const branding = {
     ...base.branding,
-    // shared company brand (org_settings)
+    // shared company brand (org_settings) — colours/logo are admin-set and shown
+    // in every agent's report, so sanitize them at the boundary (defence against
+    // CSS-injection / unsafe URLs reaching an inline style or <img>).
     companyName: cb.companyName || base.branding.companyName,
     tagline:     cb.tagline     || base.branding.tagline,
-    primary:     cb.primary     || base.branding.primary,
-    accent:      cb.accent      || base.branding.accent,
-    logo:        cb.logo        || null,
+    primary:     safeHexColor(cb.primary, base.branding.primary),
+    accent:      safeHexColor(cb.accent,  base.branding.accent),
+    logo:        safeImageUrl(cb.logo)    || null,
     // per-agent identity (profiles)
     agentName:  (profile && profile.full_name) || '',
     agentTitle: (profile && profile.title)     || base.branding.agentTitle,
     phone:      (profile && profile.phone)     || '',
     email:      (profile && profile.email)     || '',
-    headshot:   (profile && profile.headshot_url) || null,
+    headshot:   safeImageUrl(profile && profile.headshot_url) || null,
   };
   return { version: base.version, presets, branding, isAdmin: _isAdmin, mustReset: _mustReset };
 }
@@ -366,27 +399,29 @@ export async function loadSettings() {
 export async function persistSettings(settings) {
   const b = settings.branding || {};
   const uid = await currentUid();
-  // Agent identity -> own profile row (every agent may edit their own).
-  try {
-    await supabase.from('profiles').update({
-      full_name:    b.agentName  || null,
-      title:        b.agentTitle || null,
-      phone:        b.phone      || null,
-      email:        b.email      || null,
-      headshot_url: b.headshot   || null,
-    }).eq('id', uid);
-  } catch {}
+  // Agent identity -> own profile row (every agent may edit their own). Note:
+  // is_admin is intentionally NOT written here — the DB also blocks it (see
+  // supabase/harden_security.sql) so an agent can't self-promote.
+  const prof = await supabase.from('profiles').update({
+    full_name:    b.agentName  || null,
+    title:        b.agentTitle || null,
+    phone:        b.phone      || null,
+    email:        b.email      || null,
+    headshot_url: b.headshot   || null,
+  }).eq('id', uid);
+  if (prof.error) throw new Error(prof.error.message);
   // Company brand + presets -> shared org_settings (admins only; RLS enforces).
   if (settings.isAdmin || _isAdmin) {
-    try {
-      await supabase.from('org_settings').update({
-        presets: settings.presets,
-        company_branding: {
-          companyName: b.companyName, tagline: b.tagline,
-          primary: b.primary, accent: b.accent, logo: b.logo || null,
-        },
-      }).eq('id', 1);
-    } catch {}
+    const org = await supabase.from('org_settings').update({
+      presets: settings.presets,
+      company_branding: {
+        companyName: b.companyName, tagline: b.tagline,
+        primary: safeHexColor(b.primary, '#252526'),
+        accent: safeHexColor(b.accent, '#beaf87'),
+        logo: safeImageUrl(b.logo) || null,
+      },
+    }).eq('id', 1);
+    if (org.error) throw new Error(org.error.message);
   }
 }
 

@@ -517,7 +517,10 @@ td.pos { color: var(--add); font-weight: 700; } td.neg { color: var(--dock); fon
   @page { size: letter; margin: 0; }
   html, body { background: #fff !important; }
   body::before { display: none !important; }
-  .sidebar, .topbar, .report-toolbar { display: none !important; }
+  /* screen-only chrome — never include in the printed/PDF output.
+     #flash is a position:fixed toast ("Saved ✓"); without this it lands at the
+     bottom of every printed page. */
+  .sidebar, .topbar, .report-toolbar, #flash, .flash { display: none !important; }
   .app { display: block !important; }
   .main { display: block !important; }
   .content { padding: 0 !important; max-width: none !important; animation: none !important; }

@@ -20,3 +20,6 @@ CLOUD_DEPLOY_AND_HANDOFF.md
 data/settings.json
 # Internal dev handoffs (keep out of the public repo)
 RESET_AND_ADMIN_HANDOFF.md
+
+# Local-only security audit write-up (documents a still-open item + history PII pointer)
+SECURITY_AUDIT.md

@@ -1,6 +1,7 @@
 data/
 _ref/
 .git/
+.claude/
 __pycache__/
 *.pyc
 supabase/
@@ -9,3 +10,8 @@ node_modules/
 package*.json
 *.mjs
 *.md
+# Not part of the cloud service — the legacy local-only server and its launcher.
+server.py
+Start CMA.bat
+# Tests are not needed in the runtime image.
+tests/

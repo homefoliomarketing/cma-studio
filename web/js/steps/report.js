@@ -1,6 +1,6 @@
 // Step 5 — the branded, printable CMA report.
 // Renders letter-size "pages" styled for screen preview and for print/PDF.
-import { el, money, signedMoney } from '../ui.js';
+import { el, money, signedMoney, safeHexColor, cssUrl, safeImageUrl } from '../ui.js';
 import { ITEM_DEFS } from '../state.js';
 import { itemDisplay, garageDisplay, effectiveAdjustment, compTotal, adjustedPrice, estimate } from '../calc.js';
 
@@ -33,7 +33,13 @@ export function renderReport(root, ctx) {
     ),
     el('div', { class: 'row', style: 'gap:8px' },
       el('button', { class: 'btn btn-ghost btn-sm', onclick: () => ctx.go('settings') }, '⚙ Branding & logo'),
-      el('button', { class: 'btn btn-accent', onclick: async () => { try { await ctx.saveToServer?.(); } catch (e) {} window.print(); } }, '🖨  Print / Save as PDF'),
+      el('button', { class: 'btn btn-accent', onclick: async (e) => {
+        const btn = e.currentTarget;
+        if (btn.disabled) return;            // guard double-click → double upsert
+        btn.disabled = true;
+        try { await ctx.saveToServer?.(); }  // saveNow surfaces its own errors via flash
+        finally { btn.disabled = false; window.print(); }
+      } }, '🖨  Print / Save as PDF'),
     ),
   );
 
@@ -44,7 +50,7 @@ export function renderReport(root, ctx) {
   }
 
   function buildDoc() {
-    const doc = el('div', { class: 'report', style: `--brand:${b.primary};--accent:${b.accent}` });
+    const doc = el('div', { class: 'report', style: `--brand:${safeHexColor(b.primary, '#252526')};--accent:${safeHexColor(b.accent, '#beaf87')}` });
     doc.append(coverPage(), analysisPage(), gridPage());
     if (cma.actives.length) doc.append(activePage());
     // Full MLS page-renders & photos: comps first, then any actives that have media.
@@ -57,8 +63,9 @@ export function renderReport(root, ctx) {
   function page(cls, ...kids) { return el('div', { class: 'report-page ' + (cls || '') }, ...kids); }
 
   function brandMark() {
-    return b.logo
-      ? el('img', { class: 'rp-logo', src: b.logo, alt: b.companyName })
+    const logo = safeImageUrl(b.logo);
+    return logo
+      ? el('img', { class: 'rp-logo', src: logo, alt: b.companyName })
       : el('div', { class: 'rp-logo-text' }, b.companyName || 'CENTURY 21');
   }
 
@@ -68,8 +75,9 @@ export function renderReport(root, ctx) {
     return n.split(/\s+/).slice(0, 2).map(w => w[0]).join('').toUpperCase();
   }
   function headshotEl(cls) {
-    return b.headshot
-      ? el('div', { class: 'rp-headshot ' + (cls || ''), style: `background-image:url(${b.headshot})` })
+    const head = cssUrl(b.headshot);
+    return head
+      ? el('div', { class: 'rp-headshot ' + (cls || ''), style: `background-image:${head}` })
       : el('div', { class: 'rp-headshot rp-headshot-empty ' + (cls || '') }, agentInitials());
   }
   // Prominent agent banner for the cover.
@@ -98,8 +106,8 @@ export function renderReport(root, ctx) {
   function coverPage() {
     return page('cover',
       el('div', { class: 'rp-band' }, brandMark(), el('div', { class: 'rp-tagline' }, b.tagline || 'COMPARATIVE MARKET ANALYSIS')),
-      cma.subject.photo
-        ? el('div', { class: 'rp-hero', style: `background-image:url(${cma.subject.photo})` },
+      cssUrl(cma.subject.photo)
+        ? el('div', { class: 'rp-hero', style: `background-image:${cssUrl(cma.subject.photo)}` },
             el('div', { class: 'rp-hero-scrim' }))
         : el('div', { class: 'rp-hero rp-hero-empty' }, el('span', {}, 'Subject Property')),
       el('div', { class: 'rp-cover-body' },
@@ -139,8 +147,8 @@ export function renderReport(root, ctx) {
   function analysisPage() {
     const subj = cma.subject;
     const subjectCard = el('div', { class: 'rp-subject' },
-      subj.photo
-        ? el('div', { class: 'rp-subject-photo', style: `background-image:url(${subj.photo})` })
+      cssUrl(subj.photo)
+        ? el('div', { class: 'rp-subject-photo', style: `background-image:${cssUrl(subj.photo)}` })
         : el('div', { class: 'rp-subject-photo rp-photo-empty' }, el('span', {}, 'Subject')),
       el('div', { class: 'rp-subject-info' },
         el('div', { class: 'rp-eyebrow' }, 'Subject property'),
@@ -152,7 +160,7 @@ export function renderReport(root, ctx) {
 
     const comps = est.rows.map((r, i) => {
       return el('div', { class: 'rp-comp' },
-        el('div', { class: 'rp-comp-photo', style: r.comp.photo ? `background-image:url(${r.comp.photo})` : '' },
+        el('div', { class: 'rp-comp-photo', style: cssUrl(r.comp.photo) ? `background-image:${cssUrl(r.comp.photo)}` : '' },
           el('span', { class: 'rp-comp-no' }, String(i + 1))),
         el('div', { class: 'rp-comp-body' },
           el('div', { class: 'rp-comp-head' },
@@ -238,8 +246,8 @@ export function renderReport(root, ctx) {
     const cards = cma.actives.map((a, i) => {
       const stats = [a.bedsTotal ? a.bedsTotal + ' bed' : '', a.bathsTotal ? a.bathsTotal + ' bath' : '', a.sqftMid ? Number(a.sqftMid).toLocaleString() + ' sqft' : '', garageDisplay(a) && garageDisplay(a) !== 'None' ? garageDisplay(a) + ' garage' : ''].filter(Boolean).join('   ·   ');
       return el('div', { class: 'rp-active' },
-        a.photo
-          ? el('div', { class: 'rp-active-photo', style: `background-image:url(${a.photo})` })
+        cssUrl(a.photo)
+          ? el('div', { class: 'rp-active-photo', style: `background-image:${cssUrl(a.photo)}` })
           : el('div', { class: 'rp-active-photo rp-photo-empty' }, el('span', {}, 'Active')),
         el('div', { class: 'rp-active-body' },
           el('div', { class: 'rp-active-kicker' }, 'Active listing ' + (i + 1)),
@@ -277,15 +285,19 @@ export function renderReport(root, ctx) {
       const recPhotos = rec.photos || [];
       if (recPages.length) {
         recPages.forEach((url, pi) => {
+          const safe = safeImageUrl(url);
+          if (!safe) return;
           out.push(page('appendix',
             appendixCap(label, ri, rec.address, `MLS page ${pi + 1}`),
-            el('div', { class: 'rp-page-frame' }, el('img', { class: 'rp-page-img', src: url }))));
+            el('div', { class: 'rp-page-frame' }, el('img', { class: 'rp-page-img', src: safe }))));
         });
       } else if (recPhotos.length) {
         out.push(page('appendix',
           appendixCap(label, ri, rec.address, 'Listing photos'),
-          el('div', { class: 'rp-photo-grid' }, ...recPhotos.slice(0, 12).map(src =>
-            el('div', { class: 'rp-photo-cell', style: `background-image:url(${src})` })))));
+          el('div', { class: 'rp-photo-grid' }, ...recPhotos.slice(0, 12)
+            .map(src => cssUrl(src))
+            .filter(Boolean)
+            .map(bg => el('div', { class: 'rp-photo-cell', style: `background-image:${bg}` })))));
       }
     });
     return out;

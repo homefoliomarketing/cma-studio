@@ -21,6 +21,40 @@ export function el(tag, props = {}, ...kids) {
   return node;
 }
 
+// ---- Safe-value sanitizers (XSS / CSS-injection defence) ------------------
+// el() escapes text children, but values interpolated into a style string or an
+// image URL are not. These guard the few places that do that — chiefly the
+// shared, admin-set company branding (colours + logo) that renders in EVERY
+// agent's report, and image URLs replayed from saved CMAs.
+
+// A brand colour is only ever a #rgb / #rrggbb hex. Anything else (e.g. a value
+// like "#000;background:url(//evil)") is rejected back to the fallback so it
+// can't inject extra declarations into an inline style.
+export function safeHexColor(v, fallback = '') {
+  return /^#[0-9a-fA-F]{3}([0-9a-fA-F]{3})?$/.test(String(v == null ? '' : v).trim())
+    ? String(v).trim() : fallback;
+}
+
+// Allow only image URLs the app actually produces: https:, our own data:image/
+// URIs, blob:, or a same-origin relative path — and never anything containing
+// characters that could break out of a CSS url() or an attribute. Blocks
+// javascript:, data:text/html, and protocol-relative //host URLs.
+export function safeImageUrl(v) {
+  const s = String(v == null ? '' : v).trim();
+  if (!s || /["'()\\\s<>]/.test(s)) return '';
+  if (/^https:\/\//i.test(s)) return s;
+  if (/^data:image\//i.test(s)) return s;
+  if (/^blob:/i.test(s)) return s;
+  if (/^\/[^/]/.test(s)) return s;          // /path (not //protocol-relative)
+  return '';
+}
+
+// Build a CSS `url("…")` from a vetted image URL, or '' if it doesn't pass.
+export function cssUrl(v) {
+  const s = safeImageUrl(v);
+  return s ? `url("${s}")` : '';
+}
+
 // Money formatting -------------------------------------------------
 const CAD = new Intl.NumberFormat('en-CA', { style: 'currency', currency: 'CAD', maximumFractionDigits: 0 });
 
