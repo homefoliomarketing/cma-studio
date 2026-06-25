@@ -626,6 +626,7 @@ table.grid thead th { border-bottom: 2px solid #cabfa0; }
 /* Agent branding — prominent banner on the report cover */
 .rp-cover-foot { padding: 0; border-top: none; }
 .rp-agent-banner { display: flex; align-items: center; gap: 18px; padding: 22px 0.55in; border-top: 3px solid var(--accent); background: linear-gradient(180deg, #faf8f2, #f6f2e8); }
+.rp-headshot { width: 54px; height: 54px; border-radius: 50%; background: var(--line-2) center/cover no-repeat; flex: none; }
 .rp-headshot-lg { width: 88px; height: 88px; border: 3px solid var(--accent); box-shadow: 0 2px 8px rgba(20,20,21,.14); }
 .rp-headshot-empty { display: grid; place-items: center; background: linear-gradient(140deg, var(--accent), var(--accent-soft)); color: var(--brand); font-family: var(--display); font-weight: 700; font-size: 30px; }
 .rp-agent-main { flex: 1; min-width: 0; }
