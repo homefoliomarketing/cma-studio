@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 100" fill="none" role="img" aria-label="CMA Studio">
+  <defs>
+    <linearGradient id="cmsGold" x1="10" y1="8" x2="120" y2="92" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#e7d6a6"/>
+      <stop offset=".5" stop-color="#c9b074"/>
+      <stop offset="1" stop-color="#9a8550"/>
+    </linearGradient>
+  </defs>
+  <g stroke="url(#cmsGold)" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round">
+    <!-- roofline: left eave up to the peak, down toward the chart -->
+    <path d="M9 56 L46 23 L67 41" fill="none"/>
+    <!-- rising arrow swoosh under the house, sweeping up to the right -->
+    <path d="M24 73 Q72 84 112 30" fill="none"/>
+  </g>
+  <!-- chimney -->
+  <rect x="55.5" y="24" width="6" height="13" rx="1.5" fill="url(#cmsGold)"/>
+  <!-- arrowhead -->
+  <path d="M101 27 L114 27 L110 40 Z" fill="url(#cmsGold)"/>
+  <!-- window (2x2) under the roof -->
+  <g fill="url(#cmsGold)">
+    <rect x="30" y="40" width="7" height="7" rx="1"/>
+    <rect x="40" y="40" width="7" height="7" rx="1"/>
+    <rect x="30" y="50" width="7" height="7" rx="1"/>
+    <rect x="40" y="50" width="7" height="7" rx="1"/>
+  </g>
+  <!-- ascending bars (chart) -->
+  <g fill="url(#cmsGold)">
+    <rect x="66" y="47" width="8" height="17" rx="1.5"/>
+    <rect x="78" y="39" width="8" height="25" rx="1.5"/>
+    <rect x="90" y="31" width="8" height="33" rx="1.5"/>
+  </g>
+</svg>

@@ -1,7 +1,7 @@
 // Step 1 — the realtor's subject property.
 import { el, flash } from '../ui.js';
 import { CONDITION_LEVELS, HEATING_OPTIONS, AC_OPTIONS, STYLE_OPTIONS, BASEMENT_OPTIONS, BASEMENT_FINISH_OPTIONS, uploadPdf, applyUpload } from '../state.js';
-import { textField, stepper, chipsField, photoField, dropzone, optionField, garageField } from '../forms.js';
+import { textField, stepper, chipsField, photoField, optionField, garageField } from '../forms.js';
 
 export function renderSubject(root, ctx) {
   const s = ctx.cma.subject;
@@ -19,33 +19,45 @@ export function renderSubject(root, ctx) {
   });
   updateFinishVis();
 
-  // --- Auto-fill from MLS ---
-  const zone = dropzone(
-    'Drop the subject’s MLS PDF here to auto-fill',
-    'or click to choose a file · you can edit everything after',
-    async (file) => {
-      zone.classList.add('drag');
-      flash('Reading the MLS PDF…');
-      try {
-        const result = await uploadPdf(file, ctx.cma.id);
-        applyUpload(s, result);
-        recomputeBeds(); recomputeBaths();
-        ctx.save();
-        ctx.refresh();
-        flash('Auto-filled from MLS ✓');
-      } catch (e) {
-        flash('Could not read that PDF: ' + e.message);
-        zone.classList.remove('drag');
-      }
-    },
-  );
+  // --- Auto-fill from MLS (compact, secondary affordance) ---
+  // The form is the focal point now; this is a small button (also a drop
+  // target) tucked above the first card. Reuses the same parse+apply flow.
+  const handleFile = async (file) => {
+    if (!file) return;
+    bar.classList.add('drag');
+    flash('Reading the MLS PDF…');
+    try {
+      const result = await uploadPdf(file, ctx.cma.id);
+      applyUpload(s, result);
+      recomputeBeds(); recomputeBaths();
+      ctx.save();
+      ctx.refresh();
+      flash('Auto-filled from MLS ✓');
+    } catch (e) {
+      flash('Could not read that PDF: ' + e.message);
+      bar.classList.remove('drag');
+    }
+  };
 
-  const autofill = el('div', { class: 'card card-pad' },
-    el('div', { class: 'section-label' }, 'Quick start'),
-    el('div', { class: 'panel-sub', style: 'margin-bottom:14px' },
-      'Have the listing’s MLS PDF? Drop it here and the details fill in automatically. Prefer to type it in? Just scroll down.'),
-    zone,
+  const pdfInput = el('input', { type: 'file', accept: 'application/pdf,.pdf', style: 'display:none' });
+  pdfInput.addEventListener('change', () => { if (pdfInput.files[0]) handleFile(pdfInput.files[0]); pdfInput.value = ''; });
+
+  const bar = el('button', { class: 'subject-autofill', type: 'button' },
+    el('span', { class: 'sa-ico' }, '📄'),
+    el('span', { class: 'sa-text' }, 'Auto-fill from an MLS PDF'),
+    el('span', { class: 'sa-hint' }, 'drop a file or click'),
+    pdfInput,
   );
+  bar.addEventListener('click', () => pdfInput.click());
+  bar.addEventListener('dragover', (e) => { e.preventDefault(); bar.classList.add('drag'); });
+  bar.addEventListener('dragleave', () => bar.classList.remove('drag'));
+  bar.addEventListener('drop', (e) => {
+    e.preventDefault(); bar.classList.remove('drag');
+    const f = [...e.dataTransfer.files].find(f => f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf'));
+    if (f) handleFile(f);
+  });
+
+  const autofill = el('div', { class: 'subject-autofill-bar' }, bar);
 
   const sections = el('div', { class: 'stagger' },
     autofill,

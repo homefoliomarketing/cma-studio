@@ -3,6 +3,7 @@ import { el, $, flash, debounce } from './ui.js';
 import { supabase } from './supa.js';
 import { renderLogin, renderSetPassword, signOut } from './auth.js';
 import * as store from './state.js';
+import { renderHome } from './steps/home.js';
 import { renderSubject } from './steps/subject.js';
 import { renderComps } from './steps/comps.js';
 import { renderAdjustments } from './steps/adjustments.js';
@@ -49,7 +50,10 @@ export const App = {
       return;
     }
     this.cma = store.loadDraft() || store.newCMA();
-    if (!this.cma.step) this.cma.step = 'subject';
+    // Always open on the Home dashboard; remember the last *workflow* step so
+    // "Continue" can resume exactly where they left off.
+    if (this.cma.step && !['home', 'settings', 'saved'].includes(this.cma.step)) this.cma.resumeStep = this.cma.step;
+    this.cma.step = 'home';
     this.applyBranding();
     this.render();
   },
@@ -114,19 +118,27 @@ export const App = {
 
   sidebar() {
     const b = this.settings.branding;
-    const markInner = b.logo
-      ? el('img', { src: b.logo, alt: '' })
-      : el('span', {}, (b.companyName || 'C')[0].toUpperCase());
-
-    const brand = el('div', { class: 'brand' },
-      el('div', { class: 'mark' }, markInner),
+    // The sidebar carries the APP's identity (CMA Studio) — fixed, never the
+    // agent's company brand (that belongs on the report only). Clicking it
+    // returns Home.
+    const brand = el('div', { class: 'brand', onclick: () => this.go('home') },
+      el('div', { class: 'mark app-mark' }, el('img', { src: 'assets/cma-studio-mark.svg', alt: '' })),
       el('div', {},
-        el('div', { class: 'name' }, b.companyName || 'CMA Studio'),
-        el('div', { class: 'sub' }, 'CMA Studio'),
+        el('div', { class: 'name' }, 'CMA Studio'),
+        el('div', { class: 'sub' }, 'Comparative Market Analysis'),
       ),
     );
 
+    const homeItem = el('li', {
+      class: 'step ' + (this.cma.step === 'home' ? 'active' : ''),
+      onclick: () => this.go('home'),
+    },
+      el('span', { class: 'num' }, el('span', {}, '⌂')),
+      el('span', { class: 'lbl' }, 'Home', el('small', {}, 'Dashboard')),
+    );
+
     const steps = el('ul', { class: 'steps' },
+      homeItem,
       ...STEPS.map(s => el('li', {
         class: 'step ' + this.stepState(s.key),
         onclick: () => this.go(s.key),
@@ -162,6 +174,7 @@ export const App = {
   main() {
     const step = STEPS.find(s => s.key === this.cma.step);
     const PAGES = {
+      home:     { title: 'Home',       crumb: 'CMA Studio' },
       settings: { title: 'Settings',   crumb: 'Configuration' },
       saved:    { title: 'Saved CMAs', crumb: 'Library' },
     };
@@ -176,8 +189,10 @@ export const App = {
         el('div', { class: 'crumb' }, crumb),
         el('h2', {}, title),
       ),
+      // Save / Continue only make sense inside a real workflow step — hide them
+      // on Home, Settings and Saved.
       el('div', { class: 'actions' },
-        el('button', { class: 'btn btn-ghost btn-sm', onclick: () => this.saveNow() }, '💾 Save'),
+        step ? el('button', { class: 'btn btn-ghost btn-sm', onclick: () => this.saveNow() }, '💾 Save') : null,
         step && step.key !== 'report'
           ? el('button', { class: 'btn btn-primary btn-sm', onclick: () => this.next() }, 'Continue →')
           : null,
@@ -197,10 +212,25 @@ export const App = {
       saveToServer: () => this.saveNow(),
       saveSettings: async () => { await store.persistSettings(this.settings); },
       applyBranding: () => this.applyBranding(),
+      newCma: () => this.newCma(),
+      openCma: async (id) => {
+        try {
+          const data = await store.openCma(id);
+          if (data) {
+            this.cma = data;
+            this.cma.step = 'home';
+            this.applyBranding();
+            this.render();
+            flash('Opened ✓');
+          }
+        } catch (e) { flash('Could not open: ' + e.message); }
+      },
     };
     const renderFn = step
       ? step.render
-      : (this.cma.step === 'saved' ? renderSaved : renderSettings);
+      : (this.cma.step === 'home' ? renderHome
+        : this.cma.step === 'saved' ? renderSaved
+        : renderSettings);
     renderFn(content, ctx);
 
     return el('main', { class: 'main' }, topbar, content);
