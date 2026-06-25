@@ -674,3 +674,30 @@ table.grid thead th { border-bottom: 2px solid #cabfa0; }
 .company-readonly .ro-company {
   font-family: var(--display); font-weight: 700; font-size: 19px; color: var(--ink);
 }
+
+/* Manage agents (admin-only) card in Settings */
+.agents-add { display: grid; gap: 14px; max-width: 580px; }
+.agents-pw { display: flex; gap: 8px; align-items: center; }
+.agents-pw input { flex: 1; }
+.agents-table {
+  border: 1px solid var(--line); border-radius: var(--r-sm);
+  overflow: hidden; margin-top: 6px;
+}
+.agent-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  padding: 12px 15px; border-bottom: 1px solid var(--line); background: var(--paper-2);
+}
+.agent-row:last-child { border-bottom: none; }
+.agent-row .agent-email { font-weight: 600; color: var(--ink); overflow-wrap: anywhere; }
+.agent-row .agent-meta { font-size: 12px; margin-top: 2px; }
+.agents-msg { font-size: 13px; line-height: 1.5; }
+.agents-msg:empty { display: none; }
+.agents-msg.err { color: var(--dock); }
+.agents-msg.ok { color: var(--add); }
+.agents-msg code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  background: var(--line-2); color: var(--ink);
+  padding: 2px 7px; border-radius: 6px; font-size: 13px;
+}
+.btn-danger { color: var(--dock); border-color: var(--dock-bg); }
+.btn-danger:hover { background: var(--dock-bg); border-color: var(--dock); }

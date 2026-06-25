@@ -5,6 +5,7 @@
 import { el, flash, debounce } from '../ui.js';
 import { defaultSettings, HEATING_OPTIONS } from '../state.js';
 import { textField, moneyField, photoField } from '../forms.js';
+import { listAgents, createAgent, deleteAgent, currentUserId, genTempPassword } from '../admin.js';
 
 export function renderSettings(root, ctx) {
   const s = ctx.settings;
@@ -121,7 +122,7 @@ export function renderSettings(root, ctx) {
       ),
     );
 
-    cards.push(companyCard, presetsCard);
+    cards.push(companyCard, presetsCard, manageAgentsCard());
   } else {
     // ---- Read-only company summary (non-admins) ---------------------------
     const ro = card('Company branding & presets · shared',
@@ -154,4 +155,104 @@ function card(title, ...body) {
 }
 function grid(...fields) {
   return el('div', { class: 'form-grid' }, ...fields.filter(Boolean));
+}
+
+// ---- Admin: add / remove agent accounts (admin-only) ----------------------
+// Talks to the protected /api/admin/* endpoints (service.py). The card renders
+// immediately with a "loading" state, then fills in the agent list async. If the
+// server key isn't configured yet it shows the server's message instead of data.
+function manageAgentsCard() {
+  const listWrap = el('div', { class: 'agents-list' });
+
+  const emailIn = el('input', { type: 'email', placeholder: 'agent@century21.ca', autocomplete: 'off' });
+  const pwIn = el('input', { type: 'text', placeholder: 'Temporary password', autocomplete: 'off' });
+  const genBtn = el('button', { class: 'btn btn-sm', type: 'button',
+    onclick: () => { pwIn.value = genTempPassword(); } }, 'Generate');
+  const addBtn = el('button', { class: 'btn btn-primary btn-sm', type: 'button' }, 'Add agent');
+  const msg = el('div', { class: 'agents-msg' });
+
+  const fmt = (d) => d ? new Date(d).toLocaleDateString('en-CA', { year: 'numeric', month: 'short', day: 'numeric' }) : 'never';
+
+  function renderList(uid, agents) {
+    listWrap.innerHTML = '';
+    if (!agents.length) { listWrap.append(el('div', { class: 'muted' }, 'No agents yet.')); return; }
+    const rows = agents
+      .slice()
+      .sort((a, b) => (a.email || '').localeCompare(b.email || ''))
+      .map(a => {
+        const isSelf = a.id === uid;
+        const action = isSelf
+          ? el('span', { class: 'muted' }, 'You')
+          : el('button', { class: 'btn btn-sm btn-danger', type: 'button', onclick: () => onDelete(a) }, 'Delete');
+        return el('div', { class: 'agent-row' },
+          el('div', {},
+            el('div', { class: 'agent-email' }, a.email || a.id),
+            el('div', { class: 'muted agent-meta' }, `Created ${fmt(a.created_at)} · Last sign-in ${fmt(a.last_sign_in_at)}`),
+          ),
+          action,
+        );
+      });
+    listWrap.append(el('div', { class: 'agents-table' }, ...rows));
+  }
+
+  async function refresh() {
+    listWrap.innerHTML = '';
+    listWrap.append(el('div', { class: 'muted' }, 'Loading agents…'));
+    try {
+      const [uid, agents] = await Promise.all([currentUserId(), listAgents()]);
+      renderList(uid, agents);
+    } catch (e) {
+      listWrap.innerHTML = '';
+      listWrap.append(el('div', { class: 'agents-msg err' }, e.message));
+    }
+  }
+
+  async function onDelete(a) {
+    if (!confirm(`Delete ${a.email}?\n\nThis permanently removes their account, saved CMAs and photos. This cannot be undone.`)) return;
+    try { await deleteAgent(a.id); flash('Deleted ' + a.email); refresh(); }
+    catch (e) { flash('Could not delete: ' + e.message); }
+  }
+
+  addBtn.addEventListener('click', async () => {
+    const email = emailIn.value.trim();
+    let pw = pwIn.value.trim();
+    msg.className = 'agents-msg'; msg.textContent = '';
+    if (!email) { msg.className = 'agents-msg err'; msg.textContent = 'Enter the agent’s email.'; return; }
+    if (!pw) { pw = genTempPassword(); pwIn.value = pw; }
+    if (pw.length < 8) { msg.className = 'agents-msg err'; msg.textContent = 'Temporary password must be at least 8 characters.'; return; }
+    addBtn.disabled = true; addBtn.textContent = 'Adding…';
+    try {
+      await createAgent(email, pw);
+      msg.className = 'agents-msg ok';
+      msg.innerHTML = '';
+      msg.append(
+        el('div', {}, '✓ Created ', el('strong', {}, email)),
+        el('div', {}, 'Temporary password: ', el('code', {}, pw)),
+        el('div', { class: 'muted' }, 'Share these with the agent — they’ll choose their own password on first login.'),
+      );
+      emailIn.value = ''; pwIn.value = '';
+      refresh();
+    } catch (e) {
+      msg.className = 'agents-msg err';
+      msg.textContent = e.message;
+    } finally {
+      addBtn.disabled = false; addBtn.textContent = 'Add agent';
+    }
+  });
+
+  refresh();
+
+  return card('Manage agents · admin',
+    el('div', { class: 'panel-sub' },
+      'Add or remove agent accounts for your office. New agents get a temporary password and must choose their own on first login.'),
+    el('div', { class: 'agents-add' },
+      el('div', { class: 'field' }, el('label', {}, 'New agent email'), emailIn),
+      el('div', { class: 'field' }, el('label', {}, 'Temporary password'),
+        el('div', { class: 'agents-pw' }, pwIn, genBtn)),
+      el('div', { class: 'row' }, addBtn),
+      msg,
+    ),
+    el('div', { class: 'section-label', style: 'margin-top:24px' }, 'Current agents'),
+    listWrap,
+  );
 }
