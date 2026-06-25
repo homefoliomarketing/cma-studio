@@ -18,3 +18,5 @@ CLOUD_DEPLOY_AND_HANDOFF.md
 
 # Realtor's local branding (headshot/contact) — cloud uses Supabase, keep out of repo
 data/settings.json
+# Internal dev handoffs (keep out of the public repo)
+RESET_AND_ADMIN_HANDOFF.md
