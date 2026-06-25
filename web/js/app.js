@@ -1,7 +1,7 @@
 // Main controller: app shell, step navigation, autosave.
 import { el, $, flash, debounce } from './ui.js';
 import { supabase } from './supa.js';
-import { renderLogin, signOut } from './auth.js';
+import { renderLogin, renderSetPassword, signOut } from './auth.js';
 import * as store from './state.js';
 import { renderSubject } from './steps/subject.js';
 import { renderComps } from './steps/comps.js';
@@ -24,6 +24,9 @@ export const App = {
   settings: null,
 
   async init() {
+    // A password-recovery link is in progress — the PASSWORD_RECOVERY listener
+    // (registered at the bottom of this file) owns the screen; don't race it.
+    if (recovering) return;
     this.guardStrayDrops();
     // Invite-only gate: no session -> show the login screen, then re-init.
     const { data: { session } } = await supabase.auth.getSession();
@@ -33,6 +36,18 @@ export const App = {
     }
     store.setAuthUid(session.user.id);
     this.settings = await store.loadSettings();
+    // Temp-password accounts (admin-created) must choose their own password
+    // before using the app; loadSettings surfaces this from their profile.
+    if (this.settings.mustReset) {
+      renderSetPassword($('#app'), async () => {
+        try { await store.clearMustReset(); } catch {}
+        this.init();
+      }, {
+        heading: 'Set your password',
+        intro: 'Your account was created with a temporary password. Choose your own to continue.',
+      });
+      return;
+    }
     this.cma = store.loadDraft() || store.newCMA();
     if (!this.cma.step) this.cma.step = 'subject';
     this.applyBranding();
@@ -217,4 +232,27 @@ export const App = {
 };
 
 window.App = App;
-App.init();
+
+// Password-recovery links: when the user clicks the reset link in their email,
+// supabase-js (detectSessionInUrl) parses the token and fires PASSWORD_RECOVERY.
+// We show the set-password screen and only boot the app once a new password is
+// saved. `recovering` keeps the normal session gate from racing ahead of it.
+let recovering = false;
+supabase.auth.onAuthStateChange((event) => {
+  if (event === 'PASSWORD_RECOVERY') {
+    recovering = true;
+    renderSetPassword($('#app'), () => { recovering = false; App.init(); }, {
+      heading: 'Choose a new password',
+      intro: 'Enter a new password for your account below.',
+    });
+  }
+});
+
+// If we arrived via a recovery link, let the listener above drive the screen
+// (avoids a flash of the login page). A safety-net timeout still boots normally
+// if the recovery event never arrives (e.g. an expired or already-used link).
+if (/type=recovery/.test(window.location.hash || '')) {
+  setTimeout(() => { if (!recovering) App.init(); }, 1500);
+} else {
+  App.init();
+}

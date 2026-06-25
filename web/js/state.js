@@ -186,8 +186,10 @@ export function loadDraft() {
 // The signed-in agent's id, cached after login (app.js calls setAuthUid).
 let _uid = null;
 let _isAdmin = false;
+let _mustReset = false;
 export function setAuthUid(id) { _uid = id; }
 export function isAdmin() { return _isAdmin; }
+export function mustReset() { return _mustReset; }
 async function currentUid() {
   if (_uid) return _uid;
   const { data } = await supabase.auth.getUser();
@@ -293,11 +295,15 @@ export async function loadSettings() {
   let org = null, profile = null;
   try {
     const uid = await currentUid();
-    const [orgRes, profRes] = await Promise.all([
+    const [orgRes, profRes, mrRes] = await Promise.all([
       supabase.from('org_settings').select('presets,company_branding').eq('id', 1).single(),
       supabase.from('profiles').select('full_name,title,phone,email,headshot_url,is_admin').eq('id', uid).single(),
+      // must_reset is fetched on its own so that, before the column exists, a
+      // "column not found" error can't wipe out the agent's loaded identity.
+      supabase.from('profiles').select('must_reset').eq('id', uid).single(),
     ]);
     org = orgRes.data; profile = profRes.data;
+    _mustReset = !!(mrRes.data && mrRes.data.must_reset);
   } catch {}
 
   const op = (org && org.presets) || {};
@@ -322,7 +328,7 @@ export async function loadSettings() {
     email:      (profile && profile.email)     || '',
     headshot:   (profile && profile.headshot_url) || null,
   };
-  return { version: base.version, presets, branding, isAdmin: _isAdmin };
+  return { version: base.version, presets, branding, isAdmin: _isAdmin, mustReset: _mustReset };
 }
 
 export async function persistSettings(settings) {
@@ -350,4 +356,13 @@ export async function persistSettings(settings) {
       }).eq('id', 1);
     } catch {}
   }
+}
+
+// Clear the "must reset password" flag once a temp-password agent has chosen
+// their own password. RLS lets each agent update their own profile row.
+export async function clearMustReset() {
+  const uid = await currentUid();
+  const { error } = await supabase.from('profiles').update({ must_reset: false }).eq('id', uid);
+  if (error) throw new Error(error.message);
+  _mustReset = false;
 }

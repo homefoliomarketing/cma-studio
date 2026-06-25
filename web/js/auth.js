@@ -106,6 +106,88 @@ export function renderLogin(mount, onSuccess) {
   emailInput.focus();
 }
 
+// renderSetPassword(mount, onDone, opts)
+//   The "choose a new password" card, reused in two situations:
+//     (1) a recovery email link was clicked (app.js sees PASSWORD_RECOVERY), and
+//     (2) a temp-password account on first login (must_reset) is forced to pick
+//         its own password before using the app.
+//   opts.heading / opts.intro tailor the copy for each case. On a successful
+//   save it calls onDone() — the caller decides what happens next (re-init, and
+//   for the must_reset case, clearing the flag first).
+export function renderSetPassword(mount, onDone, opts = {}) {
+  mount.innerHTML = '';
+
+  const heading = opts.heading || 'Set a new password';
+  const intro   = opts.intro   || 'Choose a password for your account.';
+
+  const errorLine = el('div', { class: 'login-error' });
+  const noteLine  = el('div', { class: 'login-note' });
+
+  const passInput = el('input', {
+    type: 'password',
+    autocomplete: 'new-password',
+    placeholder: 'At least 8 characters',
+  });
+  const confirmInput = el('input', {
+    type: 'password',
+    autocomplete: 'new-password',
+  });
+
+  const submitBtn = el('button', { class: 'btn btn-primary login-btn', type: 'submit' }, 'Save password');
+
+  const showError = (msg) => { errorLine.textContent = msg; noteLine.textContent = ''; };
+  const showNote  = (msg) => { noteLine.textContent  = msg; errorLine.textContent = ''; };
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    showError('');
+
+    const pw = passInput.value;
+    const confirm = confirmInput.value;
+    if (pw.length < 8) { showError('Use at least 8 characters.'); return; }
+    if (pw !== confirm) { showError('Those two passwords don’t match.'); return; }
+
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Saving…';
+
+    const { error } = await supabase.auth.updateUser({ password: pw });
+    if (error) {
+      showError(error.message);
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Save password';
+      return;
+    }
+
+    showNote('Password saved. Signing you in…');
+    // Brief beat so the confirmation is readable, then hand back to the caller.
+    setTimeout(() => onDone(), 700);
+  }
+
+  const form = el('form', { class: 'login-form', onsubmit: handleSubmit },
+    el('div', { class: 'login-field' },
+      el('label', {}, 'New password'),
+      passInput,
+    ),
+    el('div', { class: 'login-field' },
+      el('label', {}, 'Confirm password'),
+      confirmInput,
+    ),
+    submitBtn,
+    errorLine,
+    noteLine,
+  );
+
+  const card = el('div', { class: 'login-card' },
+    el('div', { class: 'login-logo' }, 'CMA'),
+    el('div', { class: 'login-title' }, heading),
+    el('div', { class: 'login-sub' }, intro),
+    form,
+  );
+
+  mount.append(el('div', { class: 'login-screen' }, card));
+  passInput.focus();
+}
+
 // signOut() — end the session and hard-reload so the app re-gates at the login screen.
 export async function signOut() {
   await supabase.auth.signOut();
