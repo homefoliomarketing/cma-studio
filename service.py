@@ -205,6 +205,29 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if status not in (200, 204):
             raise ApiError(400, "Could not delete that agent.")
 
+    def _admin_set_password(self, uid, password):
+        # Set a new (temporary) password, then flag the profile so the agent is
+        # forced to choose their own on next login (same as a fresh account).
+        status, data = _sb_request(
+            "PUT", "/auth/v1/admin/users/" + urllib.parse.quote(uid),
+            token=SERVICE_ROLE_KEY, apikey=SERVICE_ROLE_KEY,
+            body={"password": password},
+        )
+        if status not in (200, 201):
+            msg = ""
+            if isinstance(data, dict):
+                msg = (data.get("msg") or data.get("error_description")
+                       or data.get("error") or data.get("message") or "")
+            raise ApiError(400, msg or "Could not reset that agent's password.")
+        status2, _ = _sb_request(
+            "PATCH", "/rest/v1/profiles",
+            token=SERVICE_ROLE_KEY, apikey=SERVICE_ROLE_KEY,
+            query={"id": "eq." + uid},
+            body={"must_reset": True},
+        )
+        if status2 not in (200, 204):
+            raise ApiError(502, "Password was reset, but the force-change flag could not be set.")
+
     # ---- routing ----------------------------------------------------------
     def do_OPTIONS(self):
         # CORS preflight: production is same-origin, this is insurance.
@@ -228,6 +251,18 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     raise ApiError(400, "An email and a temporary password are required.")
                 user = self._admin_create_user(email, password)
                 return self._json({"ok": True, "user": user}, cors=True)
+            p = self.path.split("?", 1)[0]
+            if p.startswith("/api/admin/users/") and p.endswith("/reset"):
+                uid = p[len("/api/admin/users/"):-len("/reset")].strip("/")
+                if not uid:
+                    raise ApiError(400, "Missing agent id.")
+                self._require_admin()
+                body = self._read_json_body()
+                password = body.get("password") or ""
+                if len(password) < 8:
+                    raise ApiError(400, "Temporary password must be at least 8 characters.")
+                self._admin_set_password(uid, password)
+                return self._json({"ok": True}, cors=True)
             return self._json({"ok": False, "error": "Unknown endpoint."}, 404, cors=True)
         except ApiError as e:
             return self._json({"ok": False, "error": e.message}, e.status, cors=True)

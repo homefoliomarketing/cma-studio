@@ -5,7 +5,7 @@
 import { el, flash, debounce } from '../ui.js';
 import { defaultSettings, HEATING_OPTIONS } from '../state.js';
 import { textField, moneyField, photoField } from '../forms.js';
-import { listAgents, createAgent, deleteAgent, currentUserId, genTempPassword } from '../admin.js';
+import { listAgents, createAgent, deleteAgent, resetAgentPassword, currentUserId, genTempPassword } from '../admin.js';
 
 export function renderSettings(root, ctx) {
   const s = ctx.settings;
@@ -183,7 +183,10 @@ function manageAgentsCard() {
         const isSelf = a.id === uid;
         const action = isSelf
           ? el('span', { class: 'muted' }, 'You')
-          : el('button', { class: 'btn btn-sm btn-danger', type: 'button', onclick: () => onDelete(a) }, 'Delete');
+          : el('div', { class: 'agent-actions' },
+              el('button', { class: 'btn btn-sm', type: 'button', onclick: () => onReset(a) }, 'Reset password'),
+              el('button', { class: 'btn btn-sm btn-danger', type: 'button', onclick: () => onDelete(a) }, 'Delete'),
+            );
         return el('div', { class: 'agent-row' },
           el('div', {},
             el('div', { class: 'agent-email' }, a.email || a.id),
@@ -211,6 +214,25 @@ function manageAgentsCard() {
     if (!confirm(`Delete ${a.email}?\n\nThis permanently removes their account, saved CMAs and photos. This cannot be undone.`)) return;
     try { await deleteAgent(a.id); flash('Deleted ' + a.email); refresh(); }
     catch (e) { flash('Could not delete: ' + e.message); }
+  }
+
+  async function onReset(a) {
+    if (!confirm(`Reset the password for ${a.email}?\n\nThey'll get a new temporary password and must choose their own on next login.`)) return;
+    const pw = genTempPassword();
+    try {
+      await resetAgentPassword(a.id, pw);
+      msg.className = 'agents-msg ok';
+      msg.innerHTML = '';
+      msg.append(
+        el('div', {}, '✓ New password set for ', el('strong', {}, a.email)),
+        el('div', {}, 'Temporary password: ', el('code', {}, pw)),
+        el('div', { class: 'muted' }, 'Share it with them — they’ll choose their own on next login.'),
+      );
+      msg.scrollIntoView({ block: 'center' });
+      flash('Password reset for ' + a.email);
+    } catch (e) {
+      flash('Could not reset: ' + e.message);
+    }
   }
 
   addBtn.addEventListener('click', async () => {

@@ -701,3 +701,4 @@ table.grid thead th { border-bottom: 2px solid #cabfa0; }
 }
 .btn-danger { color: var(--dock); border-color: var(--dock-bg); }
 .btn-danger:hover { background: var(--dock-bg); border-color: var(--dock); }
+.agent-actions { display: flex; gap: 8px; flex-shrink: 0; }

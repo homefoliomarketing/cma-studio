@@ -47,6 +47,17 @@ export async function deleteAgent(uid) {
   return handle(res);
 }
 
+// Reset an agent's password to a new temporary one. They'll be forced to choose
+// their own on next login (the server re-sets their must_reset flag).
+export async function resetAgentPassword(uid, password) {
+  const res = await fetch('/api/admin/users/' + encodeURIComponent(uid) + '/reset', {
+    method: 'POST',
+    headers: await authHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ password }),
+  });
+  return handle(res);
+}
+
 // The signed-in user's id, used to keep an admin from deleting their own row.
 export async function currentUserId() {
   const { data } = await supabase.auth.getUser();
