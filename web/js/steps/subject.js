@@ -1,6 +1,6 @@
 // Step 1 — the realtor's subject property.
 import { el, flash } from '../ui.js';
-import { CONDITION_LEVELS, HEATING_OPTIONS, AC_OPTIONS, STYLE_OPTIONS, BASEMENT_OPTIONS, BASEMENT_FINISH_OPTIONS, uploadPdf, applyUpload } from '../state.js';
+import { INTERIOR_CONDITION_LEVELS, EXTERIOR_CONDITION_LEVELS, HEATING_OPTIONS, AC_OPTIONS, STYLE_OPTIONS, BASEMENT_OPTIONS, BASEMENT_FINISH_OPTIONS, uploadPdf, applyUpload } from '../state.js';
 import { textField, stepper, chipsField, photoField, optionField, garageField } from '../forms.js';
 
 export function renderSubject(root, ctx) {
@@ -94,8 +94,8 @@ export function renderSubject(root, ctx) {
 
     card('Condition',
       grid(
-        chipsField('Interior condition', s, 'interiorCondition', CONDITION_LEVELS, { wide: true, onChange: save }),
-        chipsField('Exterior condition', s, 'exteriorCondition', CONDITION_LEVELS, { wide: true, onChange: save }),
+        chipsField('Overall Interior Condition', s, 'interiorCondition', INTERIOR_CONDITION_LEVELS, { wide: true, onChange: save }),
+        chipsField('Overall Exterior Condition', s, 'exteriorCondition', EXTERIOR_CONDITION_LEVELS, { wide: true, onChange: save }),
       ),
     ),
 

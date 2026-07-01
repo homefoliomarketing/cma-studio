@@ -2,7 +2,11 @@
 import { supabase, MEDIA_BUCKET } from './supa.js';
 import { safeHexColor, safeImageUrl } from './ui.js';
 
-export const CONDITION_LEVELS = ['Dated', 'Updated', 'Good', 'Excellent', 'New'];
+// Condition scales — interior and exterior each use their own 3-level scale.
+// 'Good' and 'Excellent' are shared; only the lowest rung differs. Ordered
+// worst → best; the adjustment math uses each value's index in its own scale.
+export const INTERIOR_CONDITION_LEVELS = ['Original/Dated', 'Good', 'Excellent'];
+export const EXTERIOR_CONDITION_LEVELS = ['Needs Work', 'Good', 'Excellent'];
 
 // ---- Click-to-select option lists (realtor's vocabulary) ------------------
 // Each is offered as buttons; an "Other" button lets the realtor type anything.
@@ -71,8 +75,8 @@ export const ITEM_DEFS = [
   { key: 'garage',    label: 'Garage',             type: 'garage',  field: 'garage' },
   { key: 'basement',  label: 'Basement',           type: 'manual',  field: 'basementFinish' },
   { key: 'air',       label: 'Air Conditioning',   type: 'bool',    unit: 'centralAir', field: 'ac' },
-  { key: 'intCond',   label: 'Interior condition', type: 'condition', field: 'interiorCondition' },
-  { key: 'extCond',   label: 'Exterior condition', type: 'condition', field: 'exteriorCondition' },
+  { key: 'intCond',   label: 'Overall Interior Condition', type: 'condition', field: 'interiorCondition' },
+  { key: 'extCond',   label: 'Overall Exterior Condition', type: 'condition', field: 'exteriorCondition' },
 ];
 
 // ---- Blank records --------------------------------------------------------
@@ -350,29 +354,39 @@ export async function deleteCma(id) {
   if (error) throw new Error(error.message);
 }
 
-// ---- Settings: shared company brand + presets (org_settings) merged with the
-// agent's own identity (their profiles row), returned as ONE branding object so
+// ---- Settings: shared company brand (org_settings) + the agent's own identity
+// and adjustment presets (their profiles row), returned as ONE settings object so
 // the rest of the app and the report read it exactly as before.
 export async function loadSettings() {
   const base = defaultSettings();
-  let org = null, profile = null;
+  let org = null, profile = null, userPresets = null;
   try {
     const uid = await currentUid();
-    const [orgRes, profRes, mrRes] = await Promise.all([
+    const [orgRes, profRes, mrRes, presetRes] = await Promise.all([
       supabase.from('org_settings').select('presets,company_branding').eq('id', 1).single(),
       supabase.from('profiles').select('full_name,title,phone,email,headshot_url,is_admin').eq('id', uid).single(),
-      // must_reset is fetched on its own so that, before the column exists, a
-      // "column not found" error can't wipe out the agent's loaded identity.
+      // must_reset and presets are each fetched in their OWN query so that, before
+      // those columns exist, a "column not found" error can't wipe out the agent's
+      // loaded identity (Postgres fails the whole select if any column is missing).
       supabase.from('profiles').select('must_reset').eq('id', uid).single(),
+      supabase.from('profiles').select('presets').eq('id', uid).single(),
     ]);
     org = orgRes.data; profile = profRes.data;
     _mustReset = !!(mrRes.data && mrRes.data.must_reset);
+    userPresets = presetRes.data && presetRes.data.presets;
   } catch {}
 
+  // Adjustment presets are layered, later wins: base code defaults ← office
+  // defaults (org_settings, the shared starting point) ← this agent's own saved
+  // presets. Each agent tunes their own; new accounts inherit the office defaults.
   const op = (org && org.presets) || {};
-  const presets = Object.keys(op).length
-    ? { ...base.presets, ...op, heating: { ...base.presets.heating, ...(op.heating || {}) } }
-    : base.presets;
+  const up = userPresets || {};
+  const presets = {
+    ...base.presets,
+    ...op,
+    ...up,
+    heating: { ...base.presets.heating, ...(op.heating || {}), ...(up.heating || {}) },
+  };
 
   const cb = (org && org.company_branding) || {};
   _isAdmin = !!(profile && profile.is_admin);
@@ -410,10 +424,21 @@ export async function persistSettings(settings) {
     headshot_url: b.headshot   || null,
   }).eq('id', uid);
   if (prof.error) throw new Error(prof.error.message);
-  // Company brand + presets -> shared org_settings (admins only; RLS enforces).
+
+  // Each agent's own adjustment presets -> their profile row. Sent as a separate
+  // update so that, before the `presets` column migration is applied, a
+  // missing-column error can't block saving the identity/branding above.
+  if (settings.presets) {
+    const pr = await supabase.from('profiles').update({ presets: settings.presets }).eq('id', uid);
+    if (pr.error && pr.error.code !== '42703' && !/presets/i.test(pr.error.message || '')) {
+      throw new Error(pr.error.message);
+    }
+  }
+
+  // Shared company brand -> org_settings (admins only; RLS enforces). Adjustment
+  // presets are per-agent now (above), so they are no longer written here.
   if (settings.isAdmin || _isAdmin) {
     const org = await supabase.from('org_settings').update({
-      presets: settings.presets,
       company_branding: {
         companyName: b.companyName, tagline: b.tagline,
         primary: safeHexColor(b.primary, '#252526'),

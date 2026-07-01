@@ -14,6 +14,7 @@ create table if not exists public.profiles (
   phone        text,
   email        text,
   headshot_url text,
+  presets      jsonb,                             -- this agent's own adjustment presets; NULL = use the office defaults (org_settings.presets)
   is_admin     boolean not null default false,   -- Bud = true; promote ONLY via the service role / SQL editor
   must_reset   boolean not null default true,    -- force "choose your own password" on first login
   created_at   timestamptz not null default now(),
@@ -32,7 +33,7 @@ create policy "profiles_update_own" on public.profiles for update using (auth.ui
 -- Column-level write lockdown: an agent may edit only their own identity fields,
 -- never is_admin / id / created_at. (Postgres RLS gates rows, not columns.)
 revoke update on public.profiles from authenticated, anon;
-grant  update (full_name, title, phone, email, headshot_url, must_reset)
+grant  update (full_name, title, phone, email, headshot_url, presets, must_reset)
   on public.profiles to authenticated;
 
 -- Defence-in-depth: pin the protected columns for any PostgREST client role,

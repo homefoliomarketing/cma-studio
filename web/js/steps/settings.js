@@ -1,7 +1,7 @@
-// Settings — split into per-agent identity (everyone) and shared company brand
-// + adjustment presets (admins only). The company brand and presets live in
-// org_settings and are shared office-wide; an agent's name/title/phone/email/
-// headshot live in their own profile.
+// Settings — per-agent identity AND per-agent adjustment presets (everyone edits
+// their own; new accounts start from the office defaults), plus the shared
+// company brand (admins only). Identity + presets live on the agent's own profile
+// row; the company brand lives in org_settings and is shared office-wide.
 import { el, flash, debounce, safeImageUrl } from '../ui.js';
 import { defaultSettings, HEATING_OPTIONS } from '../state.js';
 import { textField, moneyField, photoField } from '../forms.js';
@@ -71,7 +71,38 @@ export function renderSettings(root, ctx) {
     ),
   );
 
-  const cards = [agentCard];
+  // ---- Adjustment presets (every agent edits their own) -------------------
+  // Stored on the agent's own profile row; new accounts start from the office
+  // defaults. Shown to everyone — admin and agents alike tune their own market.
+  const PRESET_FIELDS = [
+    ['bedroomAbove',      'Per bedroom — above grade'],
+    ['bedroomBelow',      'Per bedroom — below grade'],
+    ['fullBath',          'Per full bathroom'],
+    ['halfBath',          'Per half bathroom'],
+    ['noGarage',          'Garage — having one (vs none)'],
+    ['garageSpace',       'Garage — each extra space'],
+    ['finishedBasement',  'Finished vs. unfinished basement'],
+    ['centralAir',        'Air conditioning — has vs. not'],
+    ['conditionPerLevel', 'Per condition level'],
+  ];
+  const presetsCard = card('Adjustment presets · yours',
+    el('div', { class: 'panel-sub' },
+      'The default dollar value for each point of difference between your subject and a comp. ',
+      el('strong', {}, 'These are your own — set them to your market.'),
+      ' New accounts start from your office’s defaults. Square footage, lot and style are adjusted by hand on each CMA. Any single adjustment can still be overridden while building a CMA.'),
+    el('div', { class: 'form-grid three' },
+      ...PRESET_FIELDS.map(([key, label]) => moneyField(label, p, key, { onChange: onPreset })),
+    ),
+    el('div', { class: 'section-label', style: 'margin-top:26px' }, 'Heating value by system'),
+    el('div', { class: 'panel-sub' },
+      'What each heating system is worth. Only the ', el('strong', {}, 'difference'),
+      ' between the subject and a comp is applied (so Gas Forced Air vs Electric Baseboard adds $15,000). Gas & propane are estimates — set them to your market.'),
+    el('div', { class: 'form-grid three' },
+      ...HEATING_OPTIONS.map(opt => moneyField(opt, p.heating, opt, { onChange: onPreset })),
+    ),
+  );
+
+  const cards = [agentCard, presetsCard];
 
   if (admin) {
     // ---- Company branding (shared; admin only) ----------------------------
@@ -93,41 +124,12 @@ export function renderSettings(root, ctx) {
       ),
     );
 
-    // ---- Adjustment presets (shared; admin only) --------------------------
-    const PRESET_FIELDS = [
-      ['bedroomAbove',      'Per bedroom — above grade'],
-      ['bedroomBelow',      'Per bedroom — below grade'],
-      ['fullBath',          'Per full bathroom'],
-      ['halfBath',          'Per half bathroom'],
-      ['noGarage',          'Garage — having one (vs none)'],
-      ['garageSpace',       'Garage — each extra space'],
-      ['finishedBasement',  'Finished vs. unfinished basement'],
-      ['centralAir',        'Air conditioning — has vs. not'],
-      ['conditionPerLevel', 'Per condition level'],
-    ];
-    const presetsCard = card('Adjustment presets · shared',
-      el('div', { class: 'panel-sub' },
-        'The default dollar value for each point of difference between a subject and a comp. ',
-        el('strong', {}, 'Shared office-wide — set these to your market.'),
-        ' Square footage, lot and style are adjusted by hand on each CMA. Any single adjustment can still be overridden while building a CMA.'),
-      el('div', { class: 'form-grid three' },
-        ...PRESET_FIELDS.map(([key, label]) => moneyField(label, p, key, { onChange: onPreset })),
-      ),
-      el('div', { class: 'section-label', style: 'margin-top:26px' }, 'Heating value by system'),
-      el('div', { class: 'panel-sub' },
-        'What each heating system is worth. Only the ', el('strong', {}, 'difference'),
-        ' between the subject and a comp is applied (so Gas Forced Air vs Electric Baseboard adds $15,000). Gas & propane are estimates — set them to your market.'),
-      el('div', { class: 'form-grid three' },
-        ...HEATING_OPTIONS.map(opt => moneyField(opt, p.heating, opt, { onChange: onPreset })),
-      ),
-    );
-
-    cards.push(companyCard, presetsCard, manageAgentsCard());
+    cards.push(companyCard, manageAgentsCard());
   } else {
-    // ---- Read-only company summary (non-admins) ---------------------------
-    const ro = card('Company branding & presets · shared',
+    // ---- Read-only company brand summary (non-admins) ---------------------
+    const ro = card('Company branding · shared',
       el('div', { class: 'panel-sub' },
-        'Your office’s brand and adjustment presets are managed by your office admin and shared across everyone. They apply automatically to your reports.'),
+        'Your office’s brand — company name, tagline, logo and colours — is managed by your office admin and shown on your reports.'),
       el('div', { class: 'company-readonly' },
         safeImageUrl(b.logo) ? el('img', { src: safeImageUrl(b.logo), class: 'ro-logo', alt: b.companyName }) : null,
         el('div', {},
@@ -151,7 +153,30 @@ export function renderSettings(root, ctx) {
     }, 'Save & apply'),
   );
 
-  root.append(el('div', { class: 'stagger' }, ...cards, saveBar));
+  // First login: guide the new agent to fill in their profile before anything
+  // else. app.js routes here (and sets ctx.onboarding) when the profile has no
+  // name yet; the "Your details" card is already first below the banner.
+  const onboardBanner = ctx.onboarding ? el('div', {
+      class: 'card card-pad',
+      style: 'border-left:4px solid var(--accent)',
+    },
+    el('div', { class: 'section-label' }, 'Welcome to CMA Studio 👋'),
+    el('div', { class: 'panel-sub' },
+      'Let’s set up your profile first. Add your name, title, phone and headshot below — these appear on every report you create, and you can change them anytime.'),
+    el('div', { class: 'row', style: 'margin-top:12px' },
+      el('button', {
+        class: 'btn btn-primary btn-sm',
+        onclick: async () => {
+          const ok = await ctx.saveSettings();
+          ctx.applyBranding();
+          if (ok) ctx.go('home');
+        },
+      }, 'Save & go to dashboard →'),
+    ),
+  ) : null;
+
+  root.append(el('div', { class: 'stagger' },
+    ...(onboardBanner ? [onboardBanner] : []), ...cards, saveBar));
 }
 
 function card(title, ...body) {

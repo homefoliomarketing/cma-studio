@@ -23,6 +23,7 @@ const STEPS = [
 export const App = {
   cma: null,
   settings: null,
+  onboarding: false,   // true right after first login until the profile has a name
 
   async init() {
     // A password-recovery link is in progress — the PASSWORD_RECOVERY listener
@@ -54,6 +55,11 @@ export const App = {
     // "Continue" can resume exactly where they left off.
     if (this.cma.step && !['home', 'settings', 'saved'].includes(this.cma.step)) this.cma.resumeStep = this.cma.step;
     this.cma.step = 'home';
+    // First-time agents (no name on their profile yet) are guided straight to
+    // Settings to set up their profile — name, title, headshot — before anything
+    // else. A returning agent with a name lands on Home as usual.
+    this.onboarding = !this.settings.branding.agentName;
+    if (this.onboarding) this.cma.step = 'settings';
     this.applyBranding();
     this.render();
   },
@@ -89,6 +95,8 @@ export const App = {
 
   go(step) {
     if (!this.canAccess(step)) return;
+    // Leaving Settings ends the first-login onboarding nudge.
+    if (step !== 'settings') this.onboarding = false;
     this.cma.step = step;
     store.saveDraft(this.cma);
     this.render();
@@ -203,6 +211,7 @@ export const App = {
     const ctx = {
       cma: this.cma,
       settings: this.settings,
+      onboarding: this.onboarding,
       go: (s) => this.go(s),
       next: () => this.next(),
       refresh: () => this.render(),

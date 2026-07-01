@@ -6,10 +6,19 @@
 //   comp superior to subject  -> subtract (−)
 // so amount = (subject − comp) × per-unit dollars.
 
-import { ITEM_DEFS, CONDITION_LEVELS } from './state.js';
+import { ITEM_DEFS, INTERIOR_CONDITION_LEVELS, EXTERIOR_CONDITION_LEVELS } from './state.js';
 
 const num = (x) => (x == null || x === '' || isNaN(x)) ? 0 : Number(x);
-const condIdx = (lvl) => Math.max(0, CONDITION_LEVELS.indexOf(lvl));
+// Index of a condition within its own scale. Tolerant of values saved under the
+// old 5-level scale (Dated/Updated/Good/Excellent/New) so reopening an older CMA
+// still adjusts sensibly; unknown/blank falls to the middle ('Good'), the default.
+const CONDITION_LEGACY = { 'Dated': 0, 'Original': 0, 'Needs Work': 0, 'Original/Dated': 0, 'Updated': 1, 'Good': 1, 'Excellent': 2, 'New': 2 };
+function condIdx(lvl, levels) {
+  const i = levels.indexOf(lvl);
+  if (i !== -1) return i;
+  const j = CONDITION_LEGACY[lvl];
+  return j == null ? Math.floor((levels.length - 1) / 2) : Math.min(j, levels.length - 1);
+}
 
 // True if the property has any AC. Reads the new `ac` enum, falling back to the
 // legacy boolean `centralAir` for CMAs saved before AC became a 3-way choice.
@@ -67,8 +76,8 @@ export function suggestAdjustment(item, subject, comp, presets) {
       const s = isFinished(subject), c = isFinished(comp);
       return s && !c ? p.finishedBasement : (!s && c ? -p.finishedBasement : 0);
     }
-    case 'intCond': return (condIdx(subject.interiorCondition) - condIdx(comp.interiorCondition)) * p.conditionPerLevel;
-    case 'extCond': return (condIdx(subject.exteriorCondition) - condIdx(comp.exteriorCondition)) * p.conditionPerLevel;
+    case 'intCond': return (condIdx(subject.interiorCondition, INTERIOR_CONDITION_LEVELS) - condIdx(comp.interiorCondition, INTERIOR_CONDITION_LEVELS)) * p.conditionPerLevel;
+    case 'extCond': return (condIdx(subject.exteriorCondition, EXTERIOR_CONDITION_LEVELS) - condIdx(comp.exteriorCondition, EXTERIOR_CONDITION_LEVELS)) * p.conditionPerLevel;
     default: return 0; // sqft, lot, style → manual (realtor types the $)
   }
 }

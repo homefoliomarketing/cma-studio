@@ -1,7 +1,7 @@
 // Step 3 — the adjustment grid: subject vs. comps, auto +/- with overrides,
 // deletable rows, custom lines, live totals.
 import { el, money, signedMoney, parseMoney, flash } from '../ui.js';
-import { ITEM_DEFS, CONDITION_LEVELS } from '../state.js';
+import { ITEM_DEFS } from '../state.js';
 import { itemDisplay, effectiveAdjustment, isLocked, setOverride, clearOverride, compTotal, adjustedPrice, estimate } from '../calc.js';
 
 const uid = () => 'row_' + Math.random().toString(36).slice(2, 8);

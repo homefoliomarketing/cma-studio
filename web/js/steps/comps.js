@@ -1,6 +1,6 @@
 // Step 2 — comparables (sold, used for the math) + active competition (context only).
 import { el, flash, money } from '../ui.js';
-import { CONDITION_LEVELS, HEATING_OPTIONS, AC_OPTIONS, STYLE_OPTIONS, BASEMENT_OPTIONS, BASEMENT_FINISH_OPTIONS, blankComp, blankActive, uploadPdf, applyUpload } from '../state.js';
+import { INTERIOR_CONDITION_LEVELS, EXTERIOR_CONDITION_LEVELS, HEATING_OPTIONS, AC_OPTIONS, STYLE_OPTIONS, BASEMENT_OPTIONS, BASEMENT_FINISH_OPTIONS, blankComp, blankActive, uploadPdf, applyUpload } from '../state.js';
 import { textField, moneyField, numberField, stepper, chipsField, optionField, garageField } from '../forms.js';
 
 const MAX_COMPS = 4;
@@ -190,8 +190,8 @@ function compCard(comp, i, ctx) {
       optionField('Air Conditioning', comp, 'ac', AC_OPTIONS, { onChange: save }),
     ),
     el('div', { class: 'form-grid', style: 'margin-top:4px' },
-      chipsField('Interior condition', comp, 'interiorCondition', CONDITION_LEVELS, { wide: true, onChange: save }),
-      chipsField('Exterior condition', comp, 'exteriorCondition', CONDITION_LEVELS, { wide: true, onChange: save }),
+      chipsField('Overall Interior Condition', comp, 'interiorCondition', INTERIOR_CONDITION_LEVELS, { wide: true, onChange: save }),
+      chipsField('Overall Exterior Condition', comp, 'exteriorCondition', EXTERIOR_CONDITION_LEVELS, { wide: true, onChange: save }),
     ),
   );
 
